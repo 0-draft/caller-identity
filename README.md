@@ -20,7 +20,7 @@ request and say which of the three components is missing."
 
 ## What it covers
 
-Five paths, from the one nobody should use to the one that did not exist two years ago.
+Seven paths, from the one nobody should use to the one that did not exist two years ago.
 
 | Path | Credential it ends in | The point |
 | --- | --- | --- |
@@ -28,6 +28,8 @@ Five paths, from the one nobody should use to the one that did not exist two yea
 | AssumeRole | `ASIA...` + secret + session token | The chicken-and-egg case: you need credentials to get credentials. |
 | GitHub Actions OIDC | OIDC ID token, then `ASIA...` | The only STS calls that need no AWS credential at all. |
 | EC2 instance profile (IMDSv2) | `ASIA...` + secret + session token | Why an EC2 instance needs no key on disk, and why the `PUT` matters. |
+| Presigned URL | A URL | The same signature moved into the query string, which makes it a bearer token. |
+| SigV4a | P-256 keypair from the secret | Asymmetric signing, so AWS stores only the public half. |
 | Bedrock API key | Opaque bearer token | The path that skips SigV4 entirely, and quietly creates an IAM user. |
 
 Each path is drawn as a sequence diagram whose arrows are the requests themselves, and
@@ -36,6 +38,13 @@ call leaving your own trust domain is visible rather than something you have to 
 know. Steps declare which of the four bands they touch: issue, sign, verify, authorize. A
 band left dark is one that path skips, which is how the unsigned OIDC exchange and the
 bearer token show what they are actually bypassing.
+
+## Notes
+
+Longer write-ups live in [docs/](docs/README.md): the credential map, SigV4 in full,
+federation and the trust-policy mistakes that keep recurring, presigned URLs and SigV4a,
+and a [verification page](docs/05-verification.md) recording how each claim was checked
+and where the evidence is weaker.
 
 ## Running the checks
 
