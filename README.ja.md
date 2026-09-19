@@ -29,9 +29,26 @@ AWS のドキュメントは SigV4 も STS も正確に説明している。た�
 | EC2 instance profile (IMDSv2) | `ASIA...` + secret + session token | EC2 のディスクにキーが要らない理由と、`PUT` である理由。 |
 | Bedrock API キー | 不透明な bearer token | SigV4 を丸ごと迂回し、裏で IAM user を作る経路。 |
 
-各ステップは 4 つのバンド (発行 / 署名 / 検証 / 認可) のうちどれに触れるかを宣言している。暗いまま
-のバンドはその経路が飛ばしているもので、未署名の OIDC 交換と bearer token が実際に何を迂回して
-いるのかがそこに出る。
+各経路はシーケンス図として描かれる。矢印がリクエストそのもので、ライフラインはアクターが信頼境界の
+どちら側にいるかで色分けしてある。自分の信頼ドメインを出ていく呼び出しが、知識ではなく色の変化として
+見えるようにするため。各ステップは 4 つのバンド (発行 / 署名 / 検証 / 認可) のうちどれに触れるかを
+宣言している。暗いままのバンドはその経路が飛ばしているもので、未署名の OIDC 交換と bearer token が
+実際に何を迂回しているのかがそこに出る。
+
+## チェックを走らせる
+
+```bash
+npm run typecheck     # tsc
+npm run lint          # eslint (型情報あり)
+npm run format:check  # prettier
+npm run lint:md       # markdownlint
+npm test              # AWS 公式ベクタに対する署名器の検証
+npm run build
+```
+
+CI ではこれらをそれぞれ独立したジョブとして走らせ、加えて `npm audit` をマージ条件ではなく参考情報
+として出している。Dependabot は npm とワークフローの action を監視していて、1 週間分の更新が十数本
+ではなく数本の PR にまとまるようグループ化してある。
 
 ## 署名器について
 
@@ -55,8 +72,6 @@ canonical request をドキュメントに対して、署名値を相互検算�
 ```bash
 npm install
 npm run dev        # http://localhost:5173/caller-identity/
-npm test           # AWS 公式ベクタに対する署名器の検証
-npm run build
 ```
 
 ## 秘密情報は含まれない

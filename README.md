@@ -30,9 +30,27 @@ Five paths, from the one nobody should use to the one that did not exist two yea
 | EC2 instance profile (IMDSv2) | `ASIA...` + secret + session token | Why an EC2 instance needs no key on disk, and why the `PUT` matters. |
 | Bedrock API key | Opaque bearer token | The path that skips SigV4 entirely, and quietly creates an IAM user. |
 
-Each step also declares which of the four bands it touches: issue, sign, verify, authorize.
-A band left dark is one that path skips, which is how the unsigned OIDC exchange and the
+Each path is drawn as a sequence diagram whose arrows are the requests themselves, and
+whose lifelines are tinted by which side of the trust boundary the actor sits on, so a
+call leaving your own trust domain is visible rather than something you have to already
+know. Steps declare which of the four bands they touch: issue, sign, verify, authorize. A
+band left dark is one that path skips, which is how the unsigned OIDC exchange and the
 bearer token show what they are actually bypassing.
+
+## Running the checks
+
+```bash
+npm run typecheck     # tsc
+npm run lint          # eslint, type-aware
+npm run format:check  # prettier
+npm run lint:md       # markdownlint
+npm test              # the signer against the AWS vectors
+npm run build
+```
+
+CI runs each of those as its own job, plus `npm audit` as advisory output rather than a
+merge gate. Dependabot watches npm and the workflow actions, grouped so a week's bumps
+arrive as a handful of PRs instead of a dozen.
 
 ## The signer
 
@@ -58,8 +76,6 @@ request against the documentation and the signature against the cross-check.
 ```bash
 npm install
 npm run dev        # http://localhost:5173/caller-identity/
-npm test           # the signer against the AWS vectors
-npm run build
 ```
 
 ## Nothing here is a secret

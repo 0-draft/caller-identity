@@ -249,7 +249,11 @@ describe("temporary credentials", () => {
         "x-amz-date": "20260919T120000Z",
       },
     };
-    const opts = { region: "us-east-1", service: "s3", datetime: "20260919T120000Z" };
+    const opts = {
+      region: "us-east-1",
+      service: "s3",
+      datetime: "20260919T120000Z",
+    };
 
     const withToken = await signRequest(
       request,

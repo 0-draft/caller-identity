@@ -5,8 +5,29 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [typecheck, lint, format:check, lint:md, test, build]
+    name: ${{ matrix.task }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # The signer is checked against the signature examples AWS publishes.
+      # If `test` fails, every signature the site renders is wrong.
+      - run: npm run ${{ matrix.task }}
+
+  audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -15,8 +36,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      # The signer is checked against the signature examples AWS publishes.
-      # If this fails, every signature the site renders is wrong.
-      - run: npm test
-      - run: npm run build
+      # Advisory visibility, not a merge gate: a transitive dev-only advisory
+      # should not block a documentation fix. Dependabot opens the PRs.
+      - run: npm audit --audit-level=high
+        continue-on-error: true

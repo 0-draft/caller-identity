@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      # One PR per ecosystem keeps the noise down; CI is what decides whether
+      # the bump is safe, and CI runs the signer against the AWS vectors.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      build:
+        patterns:
+          ["vite", "@vitejs/*", "tailwindcss", "@tailwindcss/*", "typescript"]
+      lint:
+        patterns:
+          - eslint
+          - "@eslint/*"
+          - typescript-eslint
+          - "eslint-plugin-*"
+          - prettier
+          - markdownlint-cli2
+          - globals
+      test:
+        patterns: ["vitest", "@vitest/*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]

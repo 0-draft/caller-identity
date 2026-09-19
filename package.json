@@ -10,19 +10,34 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "lint": "eslint .",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"!node_modules\"",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "overrides": {
+    "smol-toml": "^1.8.0"
   },
   "dependencies": {
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.12.0",
+    "markdownlint-cli2": "^0.23.2",
+    "prettier": "^3.9.8",
     "tailwindcss": "^4.3.2",
     "typescript": "^5.9.0",
+    "typescript-eslint": "^8.70.0",
     "vite": "^8.0.9",
     "vitest": "^4.0.0"
   }

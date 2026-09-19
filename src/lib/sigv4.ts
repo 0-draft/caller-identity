@@ -200,9 +200,21 @@ export async function signRequest(
   const signature = toHex(await hmac(kSigning, stringToSign));
 
   const derivation: DerivationStep[] = [
-    { label: 'kDate = HMAC("AWS4" + secret, date)', input: date, keyHex: toHex(kDate) },
-    { label: "kRegion = HMAC(kDate, region)", input: region, keyHex: toHex(kRegion) },
-    { label: "kService = HMAC(kRegion, service)", input: service, keyHex: toHex(kService) },
+    {
+      label: 'kDate = HMAC("AWS4" + secret, date)',
+      input: date,
+      keyHex: toHex(kDate),
+    },
+    {
+      label: "kRegion = HMAC(kDate, region)",
+      input: region,
+      keyHex: toHex(kRegion),
+    },
+    {
+      label: "kService = HMAC(kRegion, service)",
+      input: service,
+      keyHex: toHex(kService),
+    },
     {
       label: 'kSigning = HMAC(kService, "aws4_request")',
       input: "aws4_request",

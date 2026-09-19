@@ -23,13 +23,31 @@ export const PHASE_LABEL: Record<Phase, L> = {
 };
 
 export type Actor =
-  | "client"
-  | "idp"
-  | "imds"
-  | "sts"
-  | "iam"
-  | "service"
-  | "external";
+  "client" | "idp" | "imds" | "sts" | "iam" | "service" | "external";
+
+/**
+ * Which side of the trust boundary an actor sits on. The sequence diagram
+ * colours lifelines by this, so a request that leaves your own trust domain is
+ * visible as a colour change rather than something you have to know already.
+ */
+export type Side = "you" | "aws" | "third-party" | "local";
+
+export const ACTOR_SIDE: Record<Actor, Side> = {
+  client: "you",
+  idp: "third-party",
+  imds: "local",
+  sts: "aws",
+  iam: "aws",
+  service: "aws",
+  external: "third-party",
+};
+
+export const SIDE_LABEL: Record<Side, L> = {
+  you: { en: "Your code", ja: "自分のコード" },
+  aws: { en: "AWS", ja: "AWS" },
+  "third-party": { en: "Third party", ja: "外部" },
+  local: { en: "On the host", ja: "ホスト内" },
+};
 
 export const ACTOR_LABEL: Record<Actor, L> = {
   client: { en: "Your workload", ja: "自分のワークロード" },
@@ -56,6 +74,11 @@ export interface WireMessage {
   headers: Array<[string, string]>;
   body?: string;
   annotations?: Annotation[];
+  /**
+   * Short label for the sequence diagram arrow. Without one a response arrow
+   * reads "200 OK", which says nothing about what came back.
+   */
+  summary?: L;
 }
 
 /** A note about what AWS does with the message, on its side of the wire. */

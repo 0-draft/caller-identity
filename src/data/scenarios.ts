@@ -30,7 +30,24 @@ const GITHUB_JWT_PAYLOAD = `{
   "iat": 1789098300
 }`;
 
-const stsAssumeRoleResponse = (action: string) => `<${action}Response xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
+/**
+ * AssumeRole and AssumeRoleWithWebIdentity return the same Credentials shape.
+ * The web identity variant adds three elements describing the token it
+ * accepted, which is the only place the federated identity survives into the
+ * response.
+ */
+const stsAssumeRoleResponse = (
+  action: string,
+  { role = "AppRole", session = "demo-session", webIdentity = false } = {},
+) => {
+  const federated = webIdentity
+    ? `
+    <SubjectFromWebIdentityToken>repo:0-draft/caller-identity:ref:refs/heads/main</SubjectFromWebIdentityToken>
+    <Audience>sts.amazonaws.com</Audience>
+    <Provider>https://token.actions.githubusercontent.com</Provider>`
+    : "";
+
+  return `<${action}Response xmlns="https://sts.amazonaws.com/doc/2011-06-15/">
   <${action}Result>
     <Credentials>
       <AccessKeyId>${TEMP_KEY}</AccessKeyId>
@@ -39,11 +56,15 @@ const stsAssumeRoleResponse = (action: string) => `<${action}Response xmlns="htt
       <Expiration>2026-09-19T13:00:00Z</Expiration>
     </Credentials>
     <AssumedRoleUser>
-      <Arn>arn:aws:sts::111111111111:assumed-role/AppRole/demo-session</Arn>
-      <AssumedRoleId>AROAEXAMPLEID:demo-session</AssumedRoleId>
-    </AssumedRoleUser>
+      <Arn>arn:aws:sts::111111111111:assumed-role/${role}/${session}</Arn>
+      <AssumedRoleId>AROAEXAMPLEID:${session}</AssumedRoleId>
+    </AssumedRoleUser>${federated}
   </${action}Result>
+  <ResponseMetadata>
+    <RequestId>01234567-89ab-cdef-0123-456789abcdef</RequestId>
+  </ResponseMetadata>
 </${action}Response>`;
+};
 
 /** The final S3 call, shared by every path that ends in temporary credentials. */
 const s3WithTemporaryCredentials = (id: string) =>
@@ -95,8 +116,8 @@ const s3WithTemporaryCredentials = (id: string) =>
           match: "X-Amz-Security-Token",
           tone: "key",
           note: {
-            en: "The third component. It is an encrypted blob AWS decrypts to recover the session's secret and its policy.",
-            ja: "3つ目の要素。AWS が復号してセッションの秘密鍵とポリシーを取り出す暗号化ブロブ。",
+            en: "The third component, and the one people forget. Its contents are opaque and AWS does not document the format; what matters is that AWS resolves it to this session's secret and its attached policy, and that it is covered by the signature.",
+            ja: "3つ目の要素であり、忘れられる要素。中身は不透明で AWS もフォーマットを公開していない。重要なのは、AWS がこれをこのセッションの secret と付随ポリシーに解決すること、そして署名の対象に含まれること。",
           },
         },
         {
@@ -116,6 +137,10 @@ const s3WithTemporaryCredentials = (id: string) =>
         ["Content-Type", "text/plain"],
       ],
       body: "hello from s3\n",
+      summary: {
+        en: "200 · signature matched, policy allowed",
+        ja: "200 · 署名一致、ポリシー許可",
+      },
     },
     serverSide: [
       {
@@ -134,8 +159,8 @@ const s3WithTemporaryCredentials = (id: string) =>
           ja: "セッションの秘密鍵を復元する",
         },
         detail: {
-          en: "Credential= names ASIA..., so the token in X-Amz-Security-Token is decrypted to get the matching secret and the session's attached policy.",
-          ja: "Credential= が ASIA... なので、X-Amz-Security-Token を復号して対応する secret とセッションに付いたポリシーを得る。",
+          en: "Credential= names ASIA..., so the secret used to recompute comes from the session that X-Amz-Security-Token identifies, together with whatever session policy was attached at issuance, rather than from a stored IAM user key.",
+          ja: "Credential= が ASIA... なので、再計算に使う secret は、保管された IAM user のキーではなく、X-Amz-Security-Token が示すセッションから来る。発行時に付いたセッションポリシーも一緒に効く。",
         },
       },
       {
@@ -183,6 +208,10 @@ export const scenarios: Scenario[] = [
         },
         response: {
           start: "HTTP/1.1 200 OK",
+          summary: {
+            en: "200 · AKIA... + secret, shown once",
+            ja: "200 · AKIA... + secret、表示は一度きり",
+          },
           headers: [["Content-Type", "text/xml"]],
           body: `<CreateAccessKeyResponse xmlns="https://iam.amazonaws.com/doc/2010-05-08/">
   <CreateAccessKeyResult>
@@ -191,16 +220,17 @@ export const scenarios: Scenario[] = [
       <AccessKeyId>${LONG_TERM_KEY}</AccessKeyId>
       <SecretAccessKey>${DEMO_SECRET}</SecretAccessKey>
       <Status>Active</Status>
+      <CreateDate>2026-09-19T12:00:00Z</CreateDate>
     </AccessKey>
   </CreateAccessKeyResult>
 </CreateAccessKeyResponse>`,
           annotations: [
             {
-              match: "<Status>Active</Status>",
+              match: "<CreateDate>2026-09-19T12:00:00Z</CreateDate>",
               tone: "warn",
               note: {
-                en: "No Expiration element. That absence is the whole risk.",
-                ja: "Expiration 要素が無い。この「無い」ことがリスクそのもの。",
+                en: "There is a CreateDate and no expiry to go with it. Age is the only signal you get, which is why key-age reports exist at all.",
+                ja: "CreateDate はあるのに、対になる期限が無い。得られる手がかりは経過時間だけ。キーの古さを報告する仕組みが必要になるのはそのため。",
               },
             },
             {
@@ -222,10 +252,10 @@ export const scenarios: Scenario[] = [
             },
           },
           {
-            title: { en: "Two per user, forever", ja: "1ユーザー2本、無期限" },
+            title: { en: "Two per user, and no more", ja: "1ユーザー2本まで" },
             detail: {
-              en: "An IAM user can hold at most two active keys, which is what makes rotation possible at all.",
-              ja: "IAM user が持てるアクティブキーは最大2本。これがローテーションを成立させている唯一の仕組み。",
+              en: "An IAM user can hold two access keys at a time, whether they are Active or Inactive. Asking for a third returns LimitExceeded. Two is what makes rotation possible: create the new one, move traffic, delete the old one.",
+              ja: "IAM user が同時に持てるアクセスキーは、Active か Inactive かを問わず2本まで。3本目を要求すると LimitExceeded が返る。2本あることがローテーションを成立させている。新しい方を作り、トラフィックを移し、古い方を消す。",
             },
           },
         ],
@@ -235,7 +265,10 @@ export const scenarios: Scenario[] = [
         phases: ["sign", "verify", "authorize"],
         from: "client",
         to: "service",
-        title: { en: "Sign an S3 request with it", ja: "そのまま S3 リクエストに署名" },
+        title: {
+          en: "Sign an S3 request with it",
+          ja: "そのまま S3 リクエストに署名",
+        },
         narrative: {
           en: "Two components only, so there is no X-Amz-Security-Token header. The signing maths is otherwise identical to the temporary-credential case.",
           ja: "2点セットなので X-Amz-Security-Token ヘッダが無い。それ以外の署名計算は一時クレデンシャルの場合と完全に同じ。",
@@ -273,27 +306,37 @@ export const scenarios: Scenario[] = [
               match: "X-Amz-Date",
               tone: "info",
               note: {
-                en: "Must be within 15 minutes of AWS's clock or you get RequestTimeTooSkewed. It narrows the replay window.",
-                ja: "AWS の時計と15分以内にずれていないと RequestTimeTooSkewed。リプレイの窓を狭めるための仕掛け。",
+                en: "S3 rejects a timestamp more than 15 minutes from its own clock with RequestTimeTooSkewed. AWS's general guidance is tighter: in most cases a signed request must arrive within five minutes. Either way the point is to bound how long an intercepted request stays replayable.",
+                ja: "S3 は自分の時計から15分以上ずれたタイムスタンプを RequestTimeTooSkewed で拒否する。AWS の一般的な案内はもっと厳しく、多くの場合5分以内に到達する必要がある。どちらにせよ狙いは、傍受されたリクエストが使い回せる時間を区切ること。",
               },
             },
           ],
         },
         response: {
           start: "HTTP/1.1 200 OK",
+          summary: {
+            en: "200 · signature matched, policy allowed",
+            ja: "200 · 署名一致、ポリシー許可",
+          },
           headers: [["x-amz-request-id", "1122334455667788"]],
           body: "hello from s3\n",
         },
         serverSide: [
           {
-            title: { en: "Look the secret up by key id", ja: "key id から secret を引く" },
+            title: {
+              en: "Look the secret up by key id",
+              ja: "key id から secret を引く",
+            },
             detail: {
               en: "Credential= names AKIA..., so AWS fetches the stored secret for that IAM user and recomputes. There is no session blob to decrypt.",
               ja: "Credential= が AKIA... なので、その IAM user の保管済み secret を引いて再計算する。復号すべきセッションブロブは存在しない。",
             },
           },
           {
-            title: { en: "The principal is the user itself", ja: "principal はユーザー本人" },
+            title: {
+              en: "The principal is the user itself",
+              ja: "principal はユーザー本人",
+            },
             detail: {
               en: "No role, no session name. CloudTrail records user/app-user, which is why attribution stops at the key rather than at a person.",
               ja: "ロールもセッション名も無い。CloudTrail には user/app-user としか残らないので、追跡は「キー」で止まり「人」まで届かない。",
@@ -312,7 +355,10 @@ export const scenarios: Scenario[] = [
       en: "A signed call to STS that returns a different, expiring identity.",
       ja: "STS への署名付き呼び出しが、期限付きの別の身元を返す。",
     },
-    credential: { en: "ASIA... + secret + session token", ja: "ASIA... + secret + session token" },
+    credential: {
+      en: "ASIA... + secret + session token",
+      ja: "ASIA... + secret + session token",
+    },
     why: {
       en: "The chicken-and-egg case: you must already hold credentials to obtain these credentials.",
       ja: "鶏と卵のケース。このクレデンシャルを得るには、既にクレデンシャルを持っている必要がある。",
@@ -323,7 +369,10 @@ export const scenarios: Scenario[] = [
         phases: ["sign", "verify", "authorize", "issue"],
         from: "client",
         to: "sts",
-        title: { en: "Sign a call to sts:AssumeRole", ja: "sts:AssumeRole に署名して呼ぶ" },
+        title: {
+          en: "Sign a call to sts:AssumeRole",
+          ja: "sts:AssumeRole に署名して呼ぶ",
+        },
         narrative: {
           en: "STS is an ordinary AWS service, so this call is signed like any other, with the credentials you already have. Note the service name in the credential scope is sts.",
           ja: "STS も普通の AWS サービスなので、この呼び出し自体を既存のクレデンシャルで署名する。credential scope のサービス名が sts になっている点に注目。",
@@ -366,6 +415,10 @@ export const scenarios: Scenario[] = [
         },
         response: {
           start: "HTTP/1.1 200 OK",
+          summary: {
+            en: "200 · ASIA... + secret + session token",
+            ja: "200 · ASIA... + secret + session token",
+          },
           headers: [["Content-Type", "text/xml"]],
           body: stsAssumeRoleResponse("AssumeRole"),
           annotations: [
@@ -373,8 +426,8 @@ export const scenarios: Scenario[] = [
               match: "<Expiration>2026-09-19T13:00:00Z</Expiration>",
               tone: "good",
               note: {
-                en: "The difference that matters. Bounded by the role's MaxSessionDuration, 15 minutes to 12 hours.",
-                ja: "決定的な差。ロールの MaxSessionDuration (15分〜12時間) で上限が決まる。",
+                en: "The difference that matters. DurationSeconds accepts 900 seconds up to the role's MaxSessionDuration, itself settable between 1 and 12 hours, and defaults to 3600. Assume a role from another assumed role and the ceiling drops to one hour regardless.",
+                ja: "決定的な差。DurationSeconds は 900 秒からロールの MaxSessionDuration (1〜12時間で設定可能) までで、既定は 3600 秒。assume したロールからさらに assume する (role chaining) と、設定に関係なく上限が1時間に落ちる。",
               },
             },
             {
@@ -389,7 +442,10 @@ export const scenarios: Scenario[] = [
         },
         serverSide: [
           {
-            title: { en: "Authenticate the caller first", ja: "まず呼び出し元を認証" },
+            title: {
+              en: "Authenticate the caller first",
+              ja: "まず呼び出し元を認証",
+            },
             detail: {
               en: "Verify the SigV4 signature to establish who is asking. Only then is the question of whether they may assume the role even reachable.",
               ja: "SigV4 署名を検証して「誰が聞いているか」を確定する。そこまで来て初めて「assume してよいか」という問いに到達する。",
@@ -403,7 +459,10 @@ export const scenarios: Scenario[] = [
             },
           },
           {
-            title: { en: "Mint and encrypt the session", ja: "セッションを作って暗号化" },
+            title: {
+              en: "Mint and encrypt the session",
+              ja: "セッションを作って暗号化",
+            },
             detail: {
               en: "A fresh secret is generated and packed, with the session's policy and expiry, into the session token blob that the caller will echo back on every request.",
               ja: "新しい secret を生成し、セッションのポリシーと期限とともに session token のブロブに詰める。呼び出し側は以降これを毎リクエスト送り返す。",
@@ -433,30 +492,46 @@ export const scenarios: Scenario[] = [
         phases: ["issue"],
         from: "client",
         to: "idp",
-        title: { en: "Ask GitHub for an ID token", ja: "GitHub に ID token を要求" },
+        title: {
+          en: "Ask GitHub for an ID token",
+          ja: "GitHub に ID token を要求",
+        },
         narrative: {
           en: "The runner holds a short-lived bearer token that only works inside this job. It exchanges it for a signed JWT naming this exact repository, ref and workflow.",
           ja: "runner はこのジョブの中でしか使えない短命の bearer token を持っている。それを、このリポジトリ・ref・ワークフローを名指しした署名付き JWT に交換する。",
         },
         request: {
-          start: "GET /?audience=sts.amazonaws.com HTTP/1.1",
+          start:
+            "GET /_apis/distributedtask/hubs/Actions/plans/PLAN_ID/jobs/JOB_ID/oidctoken?api-version=2.0&audience=sts.amazonaws.com HTTP/1.1",
           headers: [
             ["Host", "pipelinesghubeus.actions.githubusercontent.com"],
             ["Authorization", "Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"],
           ],
           annotations: [
             {
-              match: "audience=sts.amazonaws.com",
+              match: "&audience=sts.amazonaws.com",
               tone: "key",
               note: {
-                en: "Sets the aud claim. The trust policy will insist on this exact value.",
-                ja: "aud claim を決める。trust policy はこの値をピンポイントで要求する。",
+                en: "Appended with & rather than ?, because ACTIONS_ID_TOKEN_REQUEST_URL already carries a query string. It sets the aud claim, and the trust policy will insist on this exact value. Left unset, aud defaults to the repository owner's URL, which no AWS trust policy expects.",
+                ja: "? ではなく & で足す。ACTIONS_ID_TOKEN_REQUEST_URL が既にクエリ文字列を持っているから。これが aud claim を決め、trust policy はこの値をピンポイントで要求する。省略すると aud はリポジトリ所有者の URL が既定値になり、それを期待する AWS の trust policy は存在しない。",
+              },
+            },
+            {
+              match: "${ACTIONS_ID_TOKEN_REQUEST_TOKEN}",
+              tone: "info",
+              note: {
+                en: "Injected into the job only when the workflow grants id-token: write. Without that permission neither this variable nor the URL is present, and the step fails before AWS is ever contacted.",
+                ja: "ワークフローが id-token: write を与えたときだけジョブに注入される。この権限が無いと変数も URL も存在せず、AWS に触れる前にステップが落ちる。",
               },
             },
           ],
         },
         response: {
           start: "HTTP/1.1 200 OK",
+          summary: {
+            en: "200 · signed JWT naming repo and ref",
+            ja: "200 · repo と ref を名指しした署名付き JWT",
+          },
           headers: [["Content-Type", "application/json"]],
           body: `{"value":"eyJraWQiOiI...<header>.<payload>.<signature>"}
 
@@ -532,26 +607,63 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         response: {
           start: "HTTP/1.1 200 OK",
+          summary: {
+            en: "200 · ASIA..., no AWS credential was sent",
+            ja: "200 · ASIA...、AWS クレデンシャルは未送信",
+          },
           headers: [["Content-Type", "text/xml"]],
-          body: stsAssumeRoleResponse("AssumeRoleWithWebIdentity"),
+          body: stsAssumeRoleResponse("AssumeRoleWithWebIdentity", {
+            role: "GitHubRole",
+            session: "gha",
+            webIdentity: true,
+          }),
+          annotations: [
+            {
+              match:
+                "<SubjectFromWebIdentityToken>repo:0-draft/caller-identity:ref:refs/heads/main</SubjectFromWebIdentityToken>",
+              tone: "key",
+              note: {
+                en: "The sub claim, echoed back. This is the only place the federated identity appears in the response; the credentials themselves carry no trace of which repository asked for them.",
+                ja: "sub claim がそのまま返ってくる。レスポンス中で federated な身元が現れるのはここだけで、クレデンシャル自体にはどのリポジトリが要求したかの痕跡は残らない。",
+              },
+            },
+            {
+              match:
+                "<Provider>https://token.actions.githubusercontent.com</Provider>",
+              tone: "info",
+              note: {
+                en: "For an OIDC ID token this holds the iss value. Had an OAuth 2.0 access token been used instead, it would hold the ProviderId sent in the request: the asymmetry is a fossil of the social-login era the parameter name comes from.",
+                ja: "OIDC ID token ならここには iss の値が入る。OAuth 2.0 access token を使った場合はリクエストで渡した ProviderId が入る。この非対称性は、パラメータ名の由来であるソーシャルログイン時代の化石。",
+              },
+            },
+          ],
         },
         serverSide: [
           {
-            title: { en: "Match iss to a registered provider", ja: "iss を登録済み provider と照合" },
+            title: {
+              en: "Match iss to a registered provider",
+              ja: "iss を登録済み provider と照合",
+            },
             detail: {
               en: "The issuer must already exist as an IAM OIDC identity provider in the account. An unknown issuer is rejected before any crypto happens.",
               ja: "issuer がアカウント内の IAM OIDC identity provider として既に登録されている必要がある。未知の issuer は暗号検証に入る前に弾かれる。",
             },
           },
           {
-            title: { en: "Fetch JWKS and verify the signature", ja: "JWKS を取得して署名検証" },
+            title: {
+              en: "Fetch JWKS and verify the signature",
+              ja: "JWKS を取得して署名検証",
+            },
             detail: {
               en: "AWS reads the provider's /.well-known/openid-configuration, pulls the JWKS, and verifies the JWT signature. No shared secret exists between AWS and GitHub.",
               ja: "provider の /.well-known/openid-configuration を読み、JWKS を取得して JWT の署名を検証する。AWS と GitHub の間に共有秘密は存在しない。",
             },
           },
           {
-            title: { en: "Check exp, aud, then the trust policy", ja: "exp, aud、そして trust policy" },
+            title: {
+              en: "Check exp, aud, then the trust policy",
+              ja: "exp, aud、そして trust policy",
+            },
             detail: {
               en: "Expiry and audience first, then the trust policy conditions on token.actions.githubusercontent.com:sub decide whether this particular repository and ref may assume the role.",
               ja: "まず期限と audience、次に token.actions.githubusercontent.com:sub に対する trust policy の条件が、このリポジトリとこの ref に assume を許すかを決める。",
@@ -566,12 +678,18 @@ ${GITHUB_JWT_PAYLOAD}`,
 
   {
     id: "imds",
-    title: { en: "EC2 instance profile (IMDSv2)", ja: "EC2 instance profile (IMDSv2)" },
+    title: {
+      en: "EC2 instance profile (IMDSv2)",
+      ja: "EC2 instance profile (IMDSv2)",
+    },
     tagline: {
       en: "Credentials appear out of a link-local address with no call to STS from your code.",
       ja: "自分のコードは STS を呼ばないのに、リンクローカルアドレスからクレデンシャルが降ってくる。",
     },
-    credential: { en: "ASIA... + secret + session token", ja: "ASIA... + secret + session token" },
+    credential: {
+      en: "ASIA... + secret + session token",
+      ja: "ASIA... + secret + session token",
+    },
     why: {
       en: "This is why an EC2 instance or a Lambda needs no AKIA anywhere on disk.",
       ja: "EC2 や Lambda のディスク上に AKIA が1本も要らない理由がこれ。",
@@ -582,7 +700,10 @@ ${GITHUB_JWT_PAYLOAD}`,
         phases: ["issue"],
         from: "client",
         to: "imds",
-        title: { en: "Get an IMDSv2 session token", ja: "IMDSv2 のセッショントークンを取る" },
+        title: {
+          en: "Get an IMDSv2 session token",
+          ja: "IMDSv2 のセッショントークンを取る",
+        },
         narrative: {
           en: "A PUT, deliberately. A server-side request forgery can usually coerce a GET out of a vulnerable app, rarely a PUT with a custom header. That asymmetry is the whole defence.",
           ja: "あえて PUT。SSRF は脆弱なアプリから GET を引き出すことはできても、カスタムヘッダ付きの PUT はまず引き出せない。この非対称性が防御の全て。",
@@ -614,6 +735,10 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         response: {
           start: "HTTP/1.1 200 OK",
+          summary: {
+            en: "200 · IMDS session token, 6h max",
+            ja: "200 · IMDS セッショントークン、最大6時間",
+          },
           headers: [["Content-Type", "text/plain"]],
           body: "AQAEAMEXAMPLEtokenvalueEXAMPLE==",
         },
@@ -632,7 +757,10 @@ ${GITHUB_JWT_PAYLOAD}`,
         phases: ["issue"],
         from: "client",
         to: "imds",
-        title: { en: "Read the role credentials", ja: "ロールのクレデンシャルを読む" },
+        title: {
+          en: "Read the role credentials",
+          ja: "ロールのクレデンシャルを読む",
+        },
         narrative: {
           en: "The instance profile name is part of the path. What comes back is the same three components STS would have returned, because that is exactly where they came from.",
           ja: "instance profile 名がパスの一部になる。返ってくるのは STS が返すのと同じ3点セット。実際そこから来ているのだから当然。",
@@ -646,6 +774,10 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         response: {
           start: "HTTP/1.1 200 OK",
+          summary: {
+            en: "200 · ASIA... + secret + Token, auto-rotated",
+            ja: "200 · ASIA... + secret + Token、自動更新",
+          },
           headers: [["Content-Type", "text/plain"]],
           body: `{
   "Code": "Success",
@@ -677,14 +809,20 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         serverSide: [
           {
-            title: { en: "STS already ran, elsewhere", ja: "STS は既に別の場所で動いている" },
+            title: {
+              en: "STS already ran, elsewhere",
+              ja: "STS は既に別の場所で動いている",
+            },
             detail: {
-              en: "The EC2 control plane assumed the instance profile's role on your behalf and cached the result. Your process never signs an AssumeRole call.",
-              ja: "EC2 のコントロールプレーンが代わりに instance profile のロールを assume して結果をキャッシュしている。自分のプロセスは AssumeRole に署名しない。",
+              en: "EC2 obtains credentials for the instance profile's role and rotates them before they expire, so your process never signs an AssumeRole call. The role session exists whether or not anything on the instance ever reads it.",
+              ja: "EC2 が instance profile のロールのクレデンシャルを取得し、失効前に自動で入れ替える。だから自分のプロセスは AssumeRole に署名しない。インスタンス上の誰かが読むかどうかに関係なく、ロールセッションは存在している。",
             },
           },
           {
-            title: { en: "The blast radius is the instance", ja: "影響範囲はインスタンス" },
+            title: {
+              en: "The blast radius is the instance",
+              ja: "影響範囲はインスタンス",
+            },
             detail: {
               en: "Anything that can make an HTTP request from this host can read these. That is why the hop limit and IMDSv2 enforcement matter.",
               ja: "このホストから HTTP リクエストを出せるものは全部これを読める。hop limit と IMDSv2 強制が効いてくるのはそのため。",
@@ -715,7 +853,10 @@ ${GITHUB_JWT_PAYLOAD}`,
         phases: ["verify", "authorize"],
         from: "client",
         to: "service",
-        title: { en: "Call Bedrock with a bearer token", ja: "bearer token で Bedrock を呼ぶ" },
+        title: {
+          en: "Call Bedrock with a bearer token",
+          ja: "bearer token で Bedrock を呼ぶ",
+        },
         narrative: {
           en: "One header, no canonical request, no signing key chain, no SDK required. Everything the rest of this page explains simply does not happen here.",
           ja: "ヘッダ1つ。canonical request も signing key チェーンも SDK も不要。このページで説明してきたことが、ここでは何一つ起きない。",
@@ -749,19 +890,29 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         response: {
           start: "HTTP/1.1 200 OK",
+          summary: {
+            en: "200 · model output, nothing was signed",
+            ja: "200 · モデル出力、署名は一切なし",
+          },
           headers: [["Content-Type", "application/json"]],
           body: `{"output":{"message":{"role":"assistant","content":[{"text":"Hello."}]}}}`,
         },
         serverSide: [
           {
-            title: { en: "Validate the token server-side", ja: "サーバ側でトークンを検証" },
+            title: {
+              en: "Validate the token server-side",
+              ja: "サーバ側でトークンを検証",
+            },
             detail: {
               en: "The token is looked up rather than recomputed. Nothing about the request body or headers is covered by it.",
               ja: "再計算ではなく照合。リクエストのボディやヘッダはこのトークンに一切カバーされていない。",
             },
           },
           {
-            title: { en: "A long-term key hides behind it", ja: "背後に長期キーが隠れている" },
+            title: {
+              en: "A long-term key hides behind it",
+              ja: "背後に長期キーが隠れている",
+            },
             detail: {
               en: "Creating a long-term Bedrock API key silently creates an IAM user and attaches AmazonBedrockLimitedAccess to it. Short-term keys inherit the calling principal instead and expire within 12 hours.",
               ja: "long-term の Bedrock API キーを作ると、裏で IAM user が自動生成され AmazonBedrockLimitedAccess が付く。short-term のほうは呼び出し元の権限を継承し、12時間以内に失効する。",
@@ -769,7 +920,10 @@ ${GITHUB_JWT_PAYLOAD}`,
             tone: "warn",
           },
           {
-            title: { en: "Deny it if you do not need it", ja: "使わないなら禁止する" },
+            title: {
+              en: "Deny it if you do not need it",
+              ja: "使わないなら禁止する",
+            },
             detail: {
               en: "AWS recommends blocking API key creation with an SCP when the use case does not require it, precisely because it walks back the no-long-term-keys posture.",
               ja: "AWS 自身が「必要ないなら SCP で作成を禁止せよ」と案内している。長期キーを置かない方針を巻き戻すものだから。",

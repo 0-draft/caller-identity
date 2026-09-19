@@ -81,13 +81,19 @@ export function SignatureLab({ demo, lang }: { demo: SigningDemo; lang: Lang }) 
 
   const hasSessionToken = Boolean(demo.credentials.sessionToken);
 
-  // Recompute whenever the demo changes, so switching steps resets the lab.
+  // The untampered signature, for comparison. Switching steps remounts this
+  // component (App keys it by step id), so the editable state above is
+  // reinitialised from props rather than reset inside an effect.
   useEffect(() => {
-    setMethod(demo.request.method);
-    setPath(demo.request.path);
-    setHeaders(demo.request.headers);
-    setOmitToken(false);
-    signRequest(demo.request, demo.credentials, demo.options).then(setPristine);
+    let cancelled = false;
+    void signRequest(demo.request, demo.credentials, demo.options).then(
+      (result) => {
+        if (!cancelled) setPristine(result);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
   }, [demo]);
 
   useEffect(() => {
@@ -96,11 +102,13 @@ export function SignatureLab({ demo, lang }: { demo: SigningDemo; lang: Lang }) 
       ? { ...demo.credentials, sessionToken: undefined }
       : demo.credentials;
 
-    signRequest({ ...demo.request, method, path, headers }, credentials, demo.options)
-      .then((result) => {
-        if (!cancelled) setLive(result);
-      })
-      .catch(() => undefined);
+    void signRequest(
+      { ...demo.request, method, path, headers },
+      credentials,
+      demo.options,
+    ).then((result) => {
+      if (!cancelled) setLive(result);
+    });
 
     return () => {
       cancelled = true;
@@ -129,7 +137,11 @@ export function SignatureLab({ demo, lang }: { demo: SigningDemo; lang: Lang }) 
           note={copy("canonicalNote")}
           body={live.canonicalRequest}
         />
-        <Block title={copy("sts")} note={copy("stsNote")} body={live.stringToSign} />
+        <Block
+          title={copy("sts")}
+          note={copy("stsNote")}
+          body={live.stringToSign}
+        />
 
         <div>
           <div className="mb-1 flex flex-wrap items-baseline gap-x-2">
@@ -157,7 +169,9 @@ export function SignatureLab({ demo, lang }: { demo: SigningDemo; lang: Lang }) 
           </h4>
           <div
             className={`wire rounded-md border px-3 py-2 ${
-              dirty ? "border-danger bg-danger/10 text-danger" : "border-good bg-good/10 text-good"
+              dirty
+                ? "border-danger bg-danger/10 text-danger"
+                : "border-good bg-good/10 text-good"
             }`}
           >
             {live.signature}
@@ -170,7 +184,9 @@ export function SignatureLab({ demo, lang }: { demo: SigningDemo; lang: Lang }) 
         <div className="rounded-md border border-line bg-panel-2 p-3">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
             <div>
-              <h4 className="text-[12px] font-semibold text-warn">{copy("tamper")}</h4>
+              <h4 className="text-[12px] font-semibold text-warn">
+                {copy("tamper")}
+              </h4>
               <p className="text-[11.5px] text-muted">{copy("tamperNote")}</p>
             </div>
             {(dirty || omitToken) && (
