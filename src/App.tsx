@@ -15,6 +15,8 @@ import { SignatureLab } from "./components/SignatureLab";
 import { SequenceDiagram } from "./components/SequenceDiagram";
 import { Handoff } from "./components/Handoff";
 import { ConsoleChrome } from "./components/ConsoleChrome";
+import { TrustPolicyLab } from "./components/TrustPolicyLab";
+import { PresignLab } from "./components/PresignLab";
 
 const TONE_TEXT: Record<Tone, string> = {
   key: "text-key",
@@ -159,7 +161,7 @@ export default function App() {
           </p>
         </div>
 
-        <nav className="grid gap-2 pb-4 sm:grid-cols-2 xl:grid-cols-5">
+        <nav className="grid gap-2 pb-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {scenarios.map((s) => {
             const selected = s.id === scenario.id;
             return (
@@ -306,6 +308,7 @@ export default function App() {
                 lang={lang}
               />
             )}
+            {step.presignLab && <PresignLab lang={lang} />}
             {step.request && (
               <Wire
                 label={copy("request")}
@@ -325,6 +328,7 @@ export default function App() {
                 lang={lang}
               />
             )}
+            {step.trustPolicyLab && <TrustPolicyLab lang={lang} />}
           </section>
 
           <aside className="min-w-0 space-y-4">

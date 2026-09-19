@@ -150,13 +150,152 @@ function canonicalHeaders(headers: Record<string, string>): CanonicalHeaders {
   };
 }
 
+/**
+ * Everything after the canonical request is identical for header auth and
+ * query auth, so both paths share this.
+ */
+async function finishSignature(
+  canonicalRequest: string,
+  credentials: SigV4Credentials,
+  options: SigV4Options,
+): Promise<{
+  canonicalRequestHash: string;
+  credentialScope: string;
+  stringToSign: string;
+  derivation: DerivationStep[];
+  signature: string;
+}> {
+  const { region, service, datetime } = options;
+  const date = datetime.slice(0, 8);
+
+  const canonicalRequestHash = await sha256Hex(canonicalRequest);
+  const credentialScope = `${date}/${region}/${service}/aws4_request`;
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    datetime,
+    credentialScope,
+    canonicalRequestHash,
+  ].join("\n");
+
+  const kDate = await hmac(
+    encoder.encode(`AWS4${credentials.secretAccessKey}`),
+    date,
+  );
+  const kRegion = await hmac(kDate, region);
+  const kService = await hmac(kRegion, service);
+  const kSigning = await hmac(kService, "aws4_request");
+  const signature = toHex(await hmac(kSigning, stringToSign));
+
+  return {
+    canonicalRequestHash,
+    credentialScope,
+    stringToSign,
+    signature,
+    derivation: [
+      {
+        label: 'kDate = HMAC("AWS4" + secret, date)',
+        input: date,
+        keyHex: toHex(kDate),
+      },
+      {
+        label: "kRegion = HMAC(kDate, region)",
+        input: region,
+        keyHex: toHex(kRegion),
+      },
+      {
+        label: "kService = HMAC(kRegion, service)",
+        input: service,
+        keyHex: toHex(kService),
+      },
+      {
+        label: 'kSigning = HMAC(kService, "aws4_request")',
+        input: "aws4_request",
+        keyHex: toHex(kSigning),
+      },
+    ],
+  };
+}
+
+export interface PresignOptions extends SigV4Options {
+  /** Seconds the URL stays valid. S3 caps this at 604800 (seven days). */
+  expiresIn: number;
+}
+
+export interface PresignResult extends SigV4Result {
+  /** The full URL, signature included. */
+  url: string;
+  /** The auth parameters added to the query, in the order they are appended. */
+  authParams: Array<[string, string]>;
+}
+
+/**
+ * Signs a request into a URL instead of a header.
+ *
+ * Two differences from header auth matter. The payload hash is the literal
+ * UNSIGNED-PAYLOAD, because at signing time nobody knows what will be uploaded.
+ * And the session token travels as a query parameter that is part of the
+ * canonical request, rather than as a signed header. The result is a bearer
+ * credential: the URL alone is enough, for anyone holding it, until it expires.
+ */
+export async function presignUrl(
+  request: SigV4Request,
+  credentials: SigV4Credentials,
+  options: PresignOptions,
+): Promise<PresignResult> {
+  const { region, service, datetime, expiresIn } = options;
+  const credentialScope = `${datetime.slice(0, 8)}/${region}/${service}/aws4_request`;
+  const doubleEncode = options.doubleEncodePath ?? true;
+
+  const { canonical, signedHeaders } = canonicalHeaders(request.headers);
+
+  const authParams: Array<[string, string]> = [
+    ["X-Amz-Algorithm", "AWS4-HMAC-SHA256"],
+    ["X-Amz-Credential", `${credentials.accessKeyId}/${credentialScope}`],
+    ["X-Amz-Date", datetime],
+    ["X-Amz-Expires", String(expiresIn)],
+    ["X-Amz-SignedHeaders", signedHeaders],
+  ];
+  if (credentials.sessionToken) {
+    authParams.push(["X-Amz-Security-Token", credentials.sessionToken]);
+  }
+
+  const payloadHash = options.payloadHash ?? UNSIGNED_PAYLOAD;
+  const query = [...(request.query ?? []), ...authParams];
+
+  const canonicalRequest = [
+    request.method.toUpperCase(),
+    canonicalPath(request.path, doubleEncode),
+    canonicalQuery(query),
+    canonical,
+    signedHeaders,
+    payloadHash,
+  ].join("\n");
+
+  const finished = await finishSignature(canonicalRequest, credentials, options);
+
+  const host = request.headers.host ?? request.headers.Host ?? "";
+  const encodedQuery = [...query, ["X-Amz-Signature", finished.signature]]
+    .map(([k, v]) => `${uriEncode(k)}=${uriEncode(v)}`)
+    .join("&");
+
+  return {
+    ...finished,
+    canonicalRequest,
+    signedHeaders,
+    payloadHash,
+    authorizationHeader: "",
+    wireHeaders: { ...request.headers },
+    authParams,
+    url: `https://${host}${canonicalPath(request.path, false)}?${encodedQuery}`,
+  };
+}
+
 export async function signRequest(
   request: SigV4Request,
   credentials: SigV4Credentials,
   options: SigV4Options,
 ): Promise<SigV4Result> {
-  const { region, service, datetime } = options;
-  const date = datetime.slice(0, 8);
+  // Scope, string to sign and the key chain all come from finishSignature.
   const doubleEncode = options.doubleEncodePath ?? true;
 
   // The session token is part of the signed material. Omitting it from
@@ -181,60 +320,17 @@ export async function signRequest(
     payloadHash,
   ].join("\n");
 
-  const canonicalRequestHash = await sha256Hex(canonicalRequest);
-  const credentialScope = `${date}/${region}/${service}/aws4_request`;
-  const stringToSign = [
-    "AWS4-HMAC-SHA256",
-    datetime,
-    credentialScope,
-    canonicalRequestHash,
-  ].join("\n");
-
-  const kDate = await hmac(
-    encoder.encode(`AWS4${credentials.secretAccessKey}`),
-    date,
-  );
-  const kRegion = await hmac(kDate, region);
-  const kService = await hmac(kRegion, service);
-  const kSigning = await hmac(kService, "aws4_request");
-  const signature = toHex(await hmac(kSigning, stringToSign));
-
-  const derivation: DerivationStep[] = [
-    {
-      label: 'kDate = HMAC("AWS4" + secret, date)',
-      input: date,
-      keyHex: toHex(kDate),
-    },
-    {
-      label: "kRegion = HMAC(kDate, region)",
-      input: region,
-      keyHex: toHex(kRegion),
-    },
-    {
-      label: "kService = HMAC(kRegion, service)",
-      input: service,
-      keyHex: toHex(kService),
-    },
-    {
-      label: 'kSigning = HMAC(kService, "aws4_request")',
-      input: "aws4_request",
-      keyHex: toHex(kSigning),
-    },
-  ];
+  const finished = await finishSignature(canonicalRequest, credentials, options);
 
   const authorizationHeader =
-    `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${credentialScope}, ` +
-    `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${finished.credentialScope}, ` +
+    `SignedHeaders=${signedHeaders}, Signature=${finished.signature}`;
 
   return {
+    ...finished,
     canonicalRequest,
-    canonicalRequestHash,
-    credentialScope,
-    stringToSign,
     signedHeaders,
     payloadHash,
-    derivation,
-    signature,
     authorizationHeader,
     wireHeaders: { ...headers, authorization: authorizationHeader },
   };

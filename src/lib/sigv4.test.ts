@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_PAYLOAD_SHA256,
+  presignUrl,
   signRequest,
+  UNSIGNED_PAYLOAD,
   uriEncode,
   type SigV4Credentials,
 } from "./sigv4";
@@ -277,5 +279,134 @@ describe("uriEncode", () => {
 
   it("encodes multi-byte characters per UTF-8 byte", () => {
     expect(uriEncode("あ")).toBe("%E3%81%82");
+  });
+});
+
+describe("presignUrl against the AWS published example", () => {
+  /**
+   * From "Authenticating Requests: Using Query Parameters (AWS Signature
+   * Version 4)", which states outright that the example can be used as a test
+   * case. Same bucket, key, timestamp and example credentials.
+   *
+   * https://docs.aws.amazon.com/AmazonS3/latest/developerguide/sigv4-query-string-auth.html
+   */
+  it("reproduces the shareable test.txt URL", async () => {
+    const result = await presignUrl(
+      {
+        method: "GET",
+        path: "/test.txt",
+        headers: { host: "examplebucket.s3.amazonaws.com" },
+      },
+      AWS_EXAMPLE,
+      {
+        region: "us-east-1",
+        service: "s3",
+        datetime: "20130524T000000Z",
+        expiresIn: 86400,
+        doubleEncodePath: false,
+      },
+    );
+
+    expect(result.canonicalRequest).toBe(
+      [
+        "GET",
+        "/test.txt",
+        "X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-SignedHeaders=host",
+        "host:examplebucket.s3.amazonaws.com",
+        "",
+        "host",
+        "UNSIGNED-PAYLOAD",
+      ].join("\n"),
+    );
+
+    expect(result.canonicalRequestHash).toBe(
+      "3bfa292879f6447bbcda7001decf97f4a54dc650c8942174ae0a9121cf58ad04",
+    );
+
+    expect(result.signature).toBe(
+      "aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404",
+    );
+
+    expect(result.url).toBe(
+      "https://examplebucket.s3.amazonaws.com/test.txt" +
+        "?X-Amz-Algorithm=AWS4-HMAC-SHA256" +
+        "&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request" +
+        "&X-Amz-Date=20130524T000000Z" +
+        "&X-Amz-Expires=86400" +
+        "&X-Amz-SignedHeaders=host" +
+        "&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404",
+    );
+  });
+
+  it("carries the session token as a query parameter, not a header", async () => {
+    const result = await presignUrl(
+      {
+        method: "GET",
+        path: "/test.txt",
+        headers: { host: "examplebucket.s3.us-east-1.amazonaws.com" },
+      },
+      {
+        ...AWS_EXAMPLE,
+        accessKeyId: "ASIAIOSFODNN7EXAMPLE",
+        sessionToken: "IQoJb3JpZ2luX2Vj/EXAMPLE+TOKEN",
+      },
+      {
+        region: "us-east-1",
+        service: "s3",
+        datetime: "20260919T120000Z",
+        expiresIn: 900,
+        doubleEncodePath: false,
+      },
+    );
+
+    // Signed as a query parameter, so it appears in the canonical request.
+    expect(result.canonicalRequest).toContain("X-Amz-Security-Token=IQoJ");
+    // And it is not a signed header, unlike the header-auth case.
+    expect(result.signedHeaders).toBe("host");
+    // Reserved characters are percent-encoded in the URL.
+    expect(result.url).toContain(
+      "X-Amz-Security-Token=IQoJb3JpZ2luX2Vj%2FEXAMPLE%2BTOKEN",
+    );
+  });
+
+  it("signs UNSIGNED-PAYLOAD rather than a body hash", async () => {
+    const result = await presignUrl(
+      {
+        method: "PUT",
+        path: "/upload.bin",
+        headers: { host: "examplebucket.s3.amazonaws.com" },
+        body: "this body is not known at signing time",
+      },
+      AWS_EXAMPLE,
+      {
+        region: "us-east-1",
+        service: "s3",
+        datetime: "20260919T120000Z",
+        expiresIn: 300,
+        doubleEncodePath: false,
+      },
+    );
+
+    expect(result.payloadHash).toBe(UNSIGNED_PAYLOAD);
+    expect(result.canonicalRequest.endsWith("UNSIGNED-PAYLOAD")).toBe(true);
+  });
+
+  it("changes the signature when the expiry changes", async () => {
+    const base = {
+      method: "GET",
+      path: "/test.txt",
+      headers: { host: "examplebucket.s3.amazonaws.com" },
+    };
+    const opts = {
+      region: "us-east-1",
+      service: "s3",
+      datetime: "20130524T000000Z",
+      doubleEncodePath: false,
+    };
+
+    const day = await presignUrl(base, AWS_EXAMPLE, { ...opts, expiresIn: 86400 });
+    const minute = await presignUrl(base, AWS_EXAMPLE, { ...opts, expiresIn: 60 });
+
+    expect(minute.signature).not.toBe(day.signature);
   });
 });

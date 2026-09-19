@@ -661,6 +661,7 @@ ${GITHUB_JWT_PAYLOAD}`,
           en: "Exchange it via AssumeRoleWithWebIdentity",
           ja: "AssumeRoleWithWebIdentity で交換",
         },
+        trustPolicyLab: true,
         narrative: {
           en: "Look at what is missing: there is no Authorization header. This and AssumeRoleWithSAML are the only STS APIs callable with no AWS credential, and that is the entire point.",
           ja: "無いものを見てほしい。Authorization ヘッダが存在しない。これと AssumeRoleWithSAML だけが AWS クレデンシャル無しで呼べる STS API であり、それこそが要点。",
@@ -923,6 +924,112 @@ ${GITHUB_JWT_PAYLOAD}`,
     ],
   },
 
+  {
+    id: "presigned-url",
+    title: { en: "Presigned URL", ja: "presigned URL" },
+    tagline: {
+      en: "The same signature, moved into the query string, and it becomes a bearer token.",
+      ja: "同じ署名をクエリ文字列に移すと、それが bearer token になる。",
+    },
+    credential: { en: "A URL", ja: "URL そのもの" },
+    why: {
+      en: "It hands someone a single request they can make on your behalf, without giving them a credential to make any other one.",
+      ja: "自分の代わりに実行できるリクエストを1本だけ渡せる。他のリクエストを打てるクレデンシャルは渡さずに。",
+    },
+    steps: [
+      {
+        id: "build-url",
+        phases: ["sign"],
+        from: "client",
+        to: "client",
+        title: {
+          en: "Sign the request into a URL",
+          ja: "リクエストを URL に署名する",
+        },
+        narrative: {
+          en: "No network call. The canonical request is built exactly as before, but the auth parameters go into the query string and the payload hash is the literal UNSIGNED-PAYLOAD. What comes out is a string that carries its own authorisation.",
+          ja: "通信は発生しない。canonical request の作り方は同じで、認証情報をクエリ文字列に入れ、ペイロードハッシュは文字列 UNSIGNED-PAYLOAD にする。出てくるのは、自分で認可を持ち歩く文字列。",
+        },
+        presignLab: true,
+        serverSide: [
+          {
+            title: { en: "AWS is not involved yet", ja: "AWS はまだ関与しない" },
+            detail: {
+              en: "Signing is arithmetic over a string. Nothing is registered with AWS, which is why a presigned URL cannot be revoked individually: only rotating or disabling the underlying credential kills it.",
+              ja: "署名は文字列に対する計算でしかない。AWS 側には何も登録されない。だから presigned URL を個別に失効させることはできず、元のクレデンシャルを止める以外に手がない。",
+            },
+            tone: "warn",
+          },
+        ],
+      },
+      {
+        id: "anyone-uses-it",
+        phases: ["verify", "authorize"],
+        from: "external",
+        to: "service",
+        title: { en: "Anyone holding it calls S3", ja: "持っている人が S3 を呼ぶ" },
+        narrative: {
+          en: "The caller here is not you. They have no access key, no SDK and no IAM identity of their own. They have a URL, and until it expires that is enough.",
+          ja: "ここでの呼び出し元は自分ではない。アクセスキーも SDK も自分の IAM 身元も持っていない。持っているのは URL だけで、期限まではそれで足りる。",
+        },
+        request: {
+          start:
+            "GET /key.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA...&X-Amz-Date=20260919T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Security-Token=IQoJ...&X-Amz-Signature=... HTTP/1.1",
+          headers: [["Host", "my-bucket.s3.us-east-1.amazonaws.com"]],
+          annotations: [
+            {
+              match: "X-Amz-Signature=...",
+              tone: "warn",
+              note: {
+                en: "The only proof of identity in the request, and it is in the URL. URLs end up in browser history, proxy logs, referrer headers and chat messages.",
+                ja: "リクエスト中で身元を証明しているのはこれだけで、しかも URL の中にある。URL はブラウザ履歴、プロキシログ、referrer ヘッダ、チャットに残る。",
+              },
+            },
+            {
+              match: "X-Amz-Expires=900",
+              tone: "key",
+              note: {
+                en: "The only thing limiting the damage. Everything else about the request was fixed at signing time.",
+                ja: "被害を限定している唯一の要素。それ以外は全て署名時点で確定している。",
+              },
+            },
+          ],
+        },
+        response: {
+          start: "HTTP/1.1 200 OK",
+          headers: [["Content-Type", "text/plain"]],
+          body: "hello from s3\n",
+          summary: {
+            en: "200 · served to a caller with no IAM identity",
+            ja: "200 · IAM 身元を持たない相手に応答",
+          },
+        },
+        serverSide: [
+          {
+            title: {
+              en: "Same verification, different place",
+              ja: "同じ検証、違う場所",
+            },
+            detail: {
+              en: "S3 rebuilds the canonical request from the query string rather than the headers, recomputes, and compares. The algorithm is unchanged.",
+              ja: "S3 はヘッダではなくクエリ文字列から canonical request を組み立て直し、再計算して照合する。アルゴリズムは変わらない。",
+            },
+          },
+          {
+            title: {
+              en: "The principal is still you",
+              ja: "principal は依然として自分",
+            },
+            detail: {
+              en: "CloudTrail records the identity that signed the URL, not whoever used it. Sharing a presigned URL means actions taken with it are attributed to you.",
+              ja: "CloudTrail に残るのは URL に署名した身元で、使った相手ではない。presigned URL を渡すということは、それで行われた操作が自分の名前で記録されるということ。",
+            },
+            tone: "warn",
+          },
+        ],
+      },
+    ],
+  },
   {
     id: "bedrock-bearer",
     title: { en: "Bedrock API key (bearer)", ja: "Bedrock API キー (bearer)" },

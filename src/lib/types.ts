@@ -134,6 +134,10 @@ export interface Step {
    * wire. The sequence diagram draws these as a self-call loop.
    */
   handoff?: HandoffTab[];
+  /** Shows the editable trust-policy evaluator alongside this step. */
+  trustPolicyLab?: boolean;
+  /** Shows the presigned-URL builder alongside this step. */
+  presignLab?: boolean;
 }
 
 export interface Scenario {
