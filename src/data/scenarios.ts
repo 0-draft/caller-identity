@@ -1031,6 +1031,62 @@ ${GITHUB_JWT_PAYLOAD}`,
     ],
   },
   {
+    id: "sigv4a",
+    title: { en: "SigV4a (multi-region)", ja: "SigV4a (複数リージョン)" },
+    tagline: {
+      en: "Asymmetric signing, so AWS only has to store the public half.",
+      ja: "非対称署名。AWS は公開鍵側だけ持てばよくなる。",
+    },
+    credential: {
+      en: "P-256 keypair derived from the secret",
+      ja: "secret から導出した P-256 鍵ペア",
+    },
+    why: {
+      en: "A SigV4 signature is scoped to one region by construction. When one request has to be valid in several, the scoping has to move somewhere else.",
+      ja: "SigV4 の署名は構造上1リージョンに固定される。1つのリクエストを複数リージョンで有効にするには、その固定をどこか別の場所へ移すしかない。",
+    },
+    steps: [
+      {
+        id: "derive-keypair",
+        phases: ["sign"],
+        from: "client",
+        to: "client",
+        title: {
+          en: "Derive a keypair from the secret",
+          ja: "secret から鍵ペアを導出",
+        },
+        narrative: {
+          en: "The same secret access key you already have, run through a counter-mode KDF until the result lands inside the P-256 group order. No new credential is issued and nothing is registered: AWS derives the same public key on its side when it needs to check a signature.",
+          ja: "既に持っている secret access key を、結果が P-256 の位数に収まるまで counter モードの KDF に通すだけ。新しいクレデンシャルは発行されず、登録も無い。AWS 側も署名を検証するときに同じ公開鍵を導出する。",
+        },
+        sigv4aLab: true,
+        serverSide: [
+          {
+            title: {
+              en: "Only the public half is stored",
+              ja: "保管されるのは公開鍵側だけ",
+            },
+            detail: {
+              en: "This is the structural difference. SigV4 verification needs the shared secret, so every region that verifies must hold it. SigV4a verification needs only the public key, which can be replicated freely.",
+              ja: "これが構造上の違い。SigV4 の検証には共有秘密が要るので、検証するリージョン全てがそれを持つ必要がある。SigV4a の検証には公開鍵しか要らず、それは自由に複製できる。",
+            },
+            tone: "good",
+          },
+          {
+            title: {
+              en: "The retry loop is not decorative",
+              ja: "リトライは飾りではない",
+            },
+            detail: {
+              en: "A uniformly random 256-bit integer can exceed the group order, and a scalar out of range is not a valid key. The counter increments until one lands in range. In practice the first candidate works.",
+              ja: "一様乱数の 256bit 整数は位数を超えうるし、範囲外のスカラーは鍵として無効。範囲に収まるまで counter を増やす。実際には最初の候補で通る。",
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
     id: "bedrock-bearer",
     title: { en: "Bedrock API key (bearer)", ja: "Bedrock API キー (bearer)" },
     tagline: {

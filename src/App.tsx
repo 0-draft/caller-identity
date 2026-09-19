@@ -17,6 +17,7 @@ import { Handoff } from "./components/Handoff";
 import { ConsoleChrome } from "./components/ConsoleChrome";
 import { TrustPolicyLab } from "./components/TrustPolicyLab";
 import { PresignLab } from "./components/PresignLab";
+import { SigV4aLab } from "./components/SigV4aLab";
 
 const TONE_TEXT: Record<Tone, string> = {
   key: "text-key",
@@ -161,7 +162,7 @@ export default function App() {
           </p>
         </div>
 
-        <nav className="grid gap-2 pb-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <nav className="grid gap-2 pb-4 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4">
           {scenarios.map((s) => {
             const selected = s.id === scenario.id;
             return (
@@ -309,6 +310,7 @@ export default function App() {
               />
             )}
             {step.presignLab && <PresignLab lang={lang} />}
+            {step.sigv4aLab && <SigV4aLab lang={lang} />}
             {step.request && (
               <Wire
                 label={copy("request")}

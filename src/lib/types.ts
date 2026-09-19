@@ -138,6 +138,8 @@ export interface Step {
   trustPolicyLab?: boolean;
   /** Shows the presigned-URL builder alongside this step. */
   presignLab?: boolean;
+  /** Shows the SigV4a keypair derivation and signature alongside this step. */
+  sigv4aLab?: boolean;
 }
 
 export interface Scenario {
