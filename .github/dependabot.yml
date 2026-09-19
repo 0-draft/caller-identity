@@ -6,6 +6,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # typescript-eslint 8.x declares peer typescript ">=4.8.4 <6.1.0", so a
+      # TypeScript major bump cannot install at all. Lift this once the lint
+      # toolchain widens its peer range.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
     groups:
       # One PR per ecosystem keeps the noise down; CI is what decides whether
       # the bump is safe, and CI runs the signer against the AWS vectors.

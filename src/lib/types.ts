@@ -98,6 +98,20 @@ export interface SigningDemo {
   options: SigV4Options;
 }
 
+/**
+ * A snippet showing how the values just received are handed to whatever signs
+ * the next request. Some steps in a credential's life are not HTTP at all, and
+ * leaving them out is what makes the jump from "STS returned three strings" to
+ * "here is a signed request" feel like magic.
+ */
+export interface HandoffTab {
+  label: L;
+  /** Fence language, for the reader's benefit rather than for highlighting. */
+  syntax: string;
+  code: string;
+  note: L;
+}
+
 export interface Step {
   id: string;
   /**
@@ -115,6 +129,11 @@ export interface Step {
   response?: WireMessage;
   serverSide: ServerNote[];
   signing?: SigningDemo;
+  /**
+   * Present on steps that happen inside your own process rather than over the
+   * wire. The sequence diagram draws these as a self-call loop.
+   */
+  handoff?: HandoffTab[];
 }
 
 export interface Scenario {

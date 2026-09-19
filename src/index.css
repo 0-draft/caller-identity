@@ -1,15 +1,20 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #0b0e14;
-  --color-panel: #12161f;
-  --color-panel-2: #171c27;
-  --color-line: #232a38;
-  --color-fg: #d7dce5;
-  --color-muted: #8892a4;
+  /* Console-inspired chrome. Not AWS branding: no logo, no wordmark, and the
+     footer says plainly that this is not an AWS product. */
+  --color-ink: #0f1b2a;
+  --color-squid: #161e2d;
+  --color-panel: #1a2433;
+  --color-panel-2: #212c3d;
+  --color-line: #2b3a4f;
+  --color-fg: #e3e8ef;
+  --color-muted: #8b98ac;
+
   --color-key: #7cc4ff;
+  --color-amber: #ff9900;
   --color-warn: #ffb454;
-  --color-good: #7ee787;
+  --color-good: #4ade80;
   --color-info: #c4a7ff;
   --color-danger: #ff6b6b;
 
@@ -38,6 +43,76 @@ body {
   line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/*
+ * Arrow drawing and packet travel.
+ *
+ * These are CSS animations rather than SMIL on purpose. An <animate> element
+ * with the default begin="0s" is timed from the start of the document, not from
+ * when React inserts it, so an arrow that becomes active thirty seconds in
+ * jumps straight to its frozen end state and never visibly animates. A CSS
+ * animation restarts whenever the element is remounted, which is what the
+ * `key` on the active arrow gives us.
+ */
+@keyframes wire-draw {
+  from {
+    stroke-dashoffset: var(--wire-len, 600px);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.wire-draw {
+  stroke-dasharray: var(--wire-len, 600px);
+  animation: wire-draw 0.5s cubic-bezier(0.22, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes packet-travel {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(var(--packet-dx, 0px));
+    opacity: 0;
+  }
+}
+
+.packet {
+  animation: packet-travel 1.15s cubic-bezier(0.4, 0, 0.5, 1) 0.25s infinite;
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pulse {
+  animation: soft-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wire-draw,
+  .packet,
+  .pulse {
+    animation: none;
+  }
+  .wire-draw {
+    stroke-dasharray: none;
+  }
 }
 
 ::-webkit-scrollbar {

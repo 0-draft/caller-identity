@@ -66,6 +66,91 @@ const stsAssumeRoleResponse = (
 </${action}Response>`;
 };
 
+/**
+ * The step between "STS returned three strings" and "here is a signed request".
+ * It happens inside your own process, so there is no wire message; without it
+ * the jump from the previous step to the next one looks like magic.
+ */
+const credentialHandoffStep = (id: string) =>
+  ({
+    id,
+    phases: ["issue"],
+    from: "client",
+    to: "client",
+    title: {
+      en: "Hand the three values to the signer",
+      ja: "3つの値を署名側に渡す",
+    },
+    narrative: {
+      en: "Nothing leaves the machine here. The three strings have to reach whatever computes the signature, and there are exactly three ways that happens. Whichever you pick, the next request is signed with them rather than with any long-term key.",
+      ja: "ここでは何もマシンの外に出ない。3つの文字列を、署名を計算する側に届ける必要があるだけ。やり方は実質3通り。どれを選んでも、次のリクエストは長期キーではなくこの3つで署名される。",
+    },
+    handoff: [
+      {
+        label: { en: "Environment variables", ja: "環境変数" },
+        syntax: "bash",
+        code: `export AWS_ACCESS_KEY_ID=${TEMP_KEY}
+export AWS_SECRET_ACCESS_KEY=${DEMO_SECRET}
+export AWS_SESSION_TOKEN=${SESSION_TOKEN}
+
+aws sts get-caller-identity
+# => arn:aws:sts::111111111111:assumed-role/AppRole/demo-session`,
+        note: {
+          en: "The quickest path, and the one that bites. Switching back to a long-term key later without unsetting AWS_SESSION_TOKEN leaves a stale token attached to a key it does not belong to, and every request fails with InvalidClientTokenId.",
+          ja: "一番手早く、一番刺さる方法。後で長期キーに戻すときに AWS_SESSION_TOKEN を unset し忘れると、無関係なキーに古いトークンが付いたままになり、全リクエストが InvalidClientTokenId で落ちる。",
+        },
+      },
+      {
+        label: { en: "Profile", ja: "プロファイル" },
+        syntax: "ini",
+        code: `# ~/.aws/config
+[profile target]
+role_arn = arn:aws:iam::111111111111:role/AppRole
+source_profile = base
+role_session_name = demo-session
+
+# aws s3 ls --profile target`,
+        note: {
+          en: "The CLI performs the AssumeRole itself, caches the result under ~/.aws/cli/cache, and refreshes it when it expires. You never see the three values, which is the point.",
+          ja: "CLI 自身が AssumeRole を実行し、結果を ~/.aws/cli/cache にキャッシュし、期限が来たら取り直す。3つの値を自分で見ることがないのが利点。",
+        },
+      },
+      {
+        label: { en: "SDK provider chain", ja: "SDK の provider chain" },
+        syntax: "python",
+        code: `import boto3
+
+# On EC2, ECS, Lambda or EKS this is the whole integration.
+# The chain finds the credentials and refreshes them before expiry.
+s3 = boto3.client("s3")
+
+# Pasting the three values in as static strings instead
+# produces code that works now and dies at Expiration.`,
+        note: {
+          en: "The correct default whenever the workload runs on AWS. Copying the values out of a response into constructor arguments is the mistake this page exists to prevent: they expire, and static credentials do not refresh.",
+          ja: "ワークロードが AWS 上で動くなら常にこれが正解。レスポンスから値をコピーしてコンストラクタ引数に貼るのが、このページが防ぎたい間違い。期限が来ても static なクレデンシャルは更新されない。",
+        },
+      },
+    ],
+    serverSide: [
+      {
+        title: { en: "AWS sees nothing yet", ja: "AWS からはまだ何も見えない" },
+        detail: {
+          en: "This step produces no API call and no CloudTrail entry. The credentials exist and are simply sitting in a process, a file or an environment block.",
+          ja: "このステップは API 呼び出しも CloudTrail の記録も生まない。クレデンシャルは既に存在していて、プロセスかファイルか環境変数の中に置かれているだけ。",
+        },
+      },
+      {
+        title: { en: "The clock is already running", ja: "時計は既に動いている" },
+        detail: {
+          en: "Expiration was fixed when STS issued them, not when you start using them. Anything that holds the values without re-reading the source will stop working at that timestamp.",
+          ja: "Expiration は STS が発行した時点で確定していて、使い始めた時点ではない。取得元を読み直さずに値を抱え込んだものは、その時刻に動かなくなる。",
+        },
+        tone: "warn",
+      },
+    ],
+  }) satisfies Scenario["steps"][number];
+
 /** The final S3 call, shared by every path that ends in temporary credentials. */
 const s3WithTemporaryCredentials = (id: string) =>
   ({
@@ -470,6 +555,7 @@ export const scenarios: Scenario[] = [
           },
         ],
       },
+      credentialHandoffStep("use-creds"),
       s3WithTemporaryCredentials("s3-call"),
     ],
   },
@@ -672,6 +758,7 @@ ${GITHUB_JWT_PAYLOAD}`,
           },
         ],
       },
+      credentialHandoffStep("use-creds"),
       s3WithTemporaryCredentials("s3-call"),
     ],
   },
@@ -831,6 +918,7 @@ ${GITHUB_JWT_PAYLOAD}`,
           },
         ],
       },
+      credentialHandoffStep("use-creds"),
       s3WithTemporaryCredentials("s3-call"),
     ],
   },

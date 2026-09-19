@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import {
   ACTOR_LABEL,
   ACTOR_SIDE,
@@ -42,6 +42,12 @@ const TOP_PAD = 14;
 /** The bracket of an actor box, wide enough for the longest label. */
 const BOX_W = 148;
 const BOX_H = 34;
+
+/** Width of the loop drawn for a step that calls back into its own lifeline. */
+const SELF_W = 58;
+
+/** Extra vertical room the loop occupies. */
+const SELF_DROP = 22;
 
 /**
  * SVG has no text wrapping and no way to measure before layout, so actor labels
@@ -109,7 +115,11 @@ export function SequenceDiagram({
     // Heights first, then prefix sums, so the layout is a pure derivation of
     // the scenario rather than a running cursor.
     const heights = scenario.steps.map(
-      (s) => REQUEST_DY + (s.response ? RESPONSE_DY : 0) + STEP_GAP,
+      (s) =>
+        REQUEST_DY +
+        (s.response ? RESPONSE_DY : 0) +
+        (s.from === s.to ? SELF_DROP : 0) +
+        STEP_GAP,
     );
 
     return scenario.steps.map((step, index): Placed => {
@@ -244,16 +254,17 @@ export function SequenceDiagram({
           const active = index === activeIndex;
           const from = x(step.from);
           const to = x(step.to);
-          const mid = (from + to) / 2;
+          const selfCall = step.from === step.to;
+          const mid = selfCall ? from + SELF_W / 2 + 8 : (from + to) / 2;
           const colour = PHASE_COLOR[step.phases[0]];
-          const opacity = active ? 1 : 0.42;
+          const label = requestLabel(step) || t(step.title, lang);
 
           return (
             <g
               key={step.id}
               onClick={() => onSelect(index)}
               className="cursor-pointer"
-              opacity={opacity}
+              opacity={active ? 1 : 0.34}
             >
               {/* Generous hit area so the whole band is clickable. */}
               <rect
@@ -261,38 +272,92 @@ export function SequenceDiagram({
                 y={top}
                 width={WIDTH}
                 height={height}
-                fill={active ? "var(--color-key)" : "transparent"}
-                opacity={active ? 0.06 : 0}
+                rx="6"
+                fill={active ? colour : "transparent"}
+                opacity={active ? 0.08 : 0}
               />
+              {active && (
+                <rect
+                  x="0"
+                  y={top}
+                  width="3"
+                  height={height}
+                  fill={colour}
+                  rx="1.5"
+                />
+              )}
 
-              <circle cx={from} cy={requestY} r="4" fill={colour} />
-              <line
-                x1={from}
-                y1={requestY}
-                x2={to}
-                y2={requestY}
-                stroke={colour}
-                strokeWidth={active ? 2.4 : 1.6}
-                markerEnd={`url(#arrow-${step.phases[0]})`}
-              >
-                {active && (
-                  <animate
-                    attributeName="stroke-dasharray"
-                    values="0 600;600 0"
-                    dur="0.7s"
-                    fill="freeze"
+              <circle cx={from} cy={requestY} r={active ? 5 : 3.5} fill={colour} />
+
+              {selfCall ? (
+                // A step that happens inside the caller, drawn the way sequence
+                // diagrams have always drawn one: a loop back to the same
+                // lifeline.
+                <path
+                  key={`self-${index}-${activeIndex}`}
+                  className={active ? "wire-draw" : undefined}
+                  style={
+                    active
+                      ? ({ "--wire-len": `${SELF_W * 2 + 40}px` } as CSSProperties)
+                      : undefined
+                  }
+                  d={`M ${from} ${requestY} h ${SELF_W} v 20 h ${-SELF_W}`}
+                  fill="none"
+                  stroke={colour}
+                  strokeWidth={active ? 2.4 : 1.6}
+                  markerEnd={`url(#arrow-${step.phases[0]})`}
+                />
+              ) : (
+                <>
+                  <line
+                    key={`arrow-${index}-${activeIndex}`}
+                    className={active ? "wire-draw" : undefined}
+                    style={
+                      active
+                        ? ({
+                            "--wire-len": `${Math.abs(to - from)}px`,
+                          } as CSSProperties)
+                        : undefined
+                    }
+                    x1={from}
+                    y1={requestY}
+                    x2={to}
+                    y2={requestY}
+                    stroke={colour}
+                    strokeWidth={active ? 2.4 : 1.6}
+                    markerEnd={`url(#arrow-${step.phases[0]})`}
                   />
-                )}
-              </line>
+                  {active && (
+                    // The packet. Translating a <g> is the portable way to move
+                    // something along an SVG line from CSS.
+                    <g
+                      key={`packet-${index}-${activeIndex}`}
+                      className="packet"
+                      style={{ "--packet-dx": `${to - from}px` } as CSSProperties}
+                    >
+                      <circle cx={from} cy={requestY} r="4.5" fill={colour} />
+                      <circle
+                        cx={from}
+                        cy={requestY}
+                        r="9"
+                        fill={colour}
+                        opacity="0.25"
+                      />
+                    </g>
+                  )}
+                </>
+              )}
+
               <text
-                x={mid}
+                x={selfCall ? mid : mid}
                 y={requestY - 9}
-                textAnchor="middle"
+                textAnchor={selfCall ? "start" : "middle"}
                 fill={colour}
                 fontSize="12"
+                fontWeight={active ? 600 : 400}
                 fontFamily="var(--font-mono)"
               >
-                {requestLabel(step) || t(step.title, lang)}
+                {label}
               </text>
 
               {responseY !== null && (
@@ -321,10 +386,11 @@ export function SequenceDiagram({
               )}
 
               <text
-                x="8"
+                x="10"
                 y={requestY + 4}
                 fill={active ? colour : "var(--color-muted)"}
                 fontSize="11"
+                fontWeight={active ? 700 : 400}
                 fontFamily="var(--font-mono)"
               >
                 {index + 1}

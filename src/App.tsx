@@ -13,6 +13,8 @@ import {
 import { Wire } from "./components/Wire";
 import { SignatureLab } from "./components/SignatureLab";
 import { SequenceDiagram } from "./components/SequenceDiagram";
+import { Handoff } from "./components/Handoff";
+import { ConsoleChrome } from "./components/ConsoleChrome";
 
 const TONE_TEXT: Record<Tone, string> = {
   key: "text-key",
@@ -22,7 +24,7 @@ const TONE_TEXT: Record<Tone, string> = {
 };
 
 /** How long each step is held during autoplay. */
-const PLAY_INTERVAL_MS = 3200;
+const PLAY_INTERVAL_MS = 3400;
 
 const COPY = {
   tagline: {
@@ -39,21 +41,22 @@ const COPY = {
   response: { en: "Response", ja: "レスポンス" },
   serverSide: { en: "On the AWS side", ja: "AWS 側の処理" },
   railNote: {
-    en: "Lit bands are the ones this step touches. A dark band is one this path skips: the unsigned OIDC exchange never reaches Sign, and a bearer token skips Issue and Sign both.",
-    ja: "点灯しているのがこのステップが触れるバンド。暗いバンドはこの経路が飛ばしている。未署名の OIDC 交換は Sign に到達せず、bearer token は Issue と Sign の両方を飛ばす。",
+    en: "Lit bands are the ones this step touches. A dark band is one this path skips: the unsigned OIDC exchange never reaches Sign, and a bearer token skips Issue and Sign both. Arrow keys step through.",
+    ja: "点灯しているのがこのステップが触れるバンド。暗いバンドはこの経路が飛ばしている。未署名の OIDC 交換は Sign に到達せず、bearer token は Issue と Sign の両方を飛ばす。矢印キーで移動できる。",
   },
   play: { en: "Play", ja: "再生" },
   pause: { en: "Pause", ja: "停止" },
   replay: { en: "Replay", ja: "最初から" },
   prev: { en: "Previous", ja: "前へ" },
   next: { en: "Next", ja: "次へ" },
-  keys: {
-    en: "Arrow keys step through.",
-    ja: "矢印キーで移動できる。",
-  },
+  nowShowing: { en: "Now showing", ja: "表示中" },
   noSecrets: {
-    en: "The keys throughout are AWS's own published example values. Nothing here is a real secret, and nothing leaves this tab.",
-    ja: "ここで使っているキーは全て AWS 公開のサンプル値。本物の秘密は一つも無く、このタブから何も出ていかない。",
+    en: "Every key on this page is an example value AWS publishes in its own documentation. Nothing here is a real secret, no request leaves this tab, and there is no backend to send one to.",
+    ja: "このページのキーは全て AWS が自身のドキュメントで公開しているサンプル値。本物の秘密は一つも無く、このタブからリクエストは一切出ていかないし、送る先のバックエンドも存在しない。",
+  },
+  disclaimer: {
+    en: "Not an AWS product and not affiliated with Amazon Web Services. The layout is an homage; the protocol details are the point.",
+    ja: "AWS の製品ではなく、Amazon Web Services とは無関係。レイアウトはオマージュで、中身のプロトコルの方が本題。",
   },
 } as const;
 
@@ -103,7 +106,8 @@ export default function App() {
     [scenarioId],
   );
   const lastIndex = scenario.steps.length - 1;
-  const step = scenario.steps[Math.min(stepIndex, lastIndex)];
+  const current = Math.min(stepIndex, lastIndex);
+  const step = scenario.steps[current];
   const authHeader = useSignedHeaders(step);
 
   // Autoplay. The state change happens inside the timer callback rather than in
@@ -139,41 +143,25 @@ export default function App() {
     setStepIndex(index);
   };
 
+  const progress = ((current + 1) / scenario.steps.length) * 100;
+
   return (
     <div className="min-h-screen">
-      <header className="border-b border-line bg-panel">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap items-start justify-between gap-4 px-4 py-5">
-          <div className="min-w-0">
-            <h1 className="font-mono text-[22px] font-semibold tracking-tight">
-              caller-identity
-            </h1>
-            <p className="mt-1 text-[13px] text-muted">{copy("tagline")}</p>
-          </div>
-          <div className="flex shrink-0 overflow-hidden rounded-md border border-line">
-            {(["en", "ja"] as const).map((code) => (
-              <button
-                key={code}
-                type="button"
-                onClick={() => setLang(code)}
-                className={`cursor-pointer px-3 py-1.5 font-mono text-[12px] transition-colors ${
-                  lang === code ? "bg-key/15 text-key" : "text-muted hover:text-fg"
-                }`}
-              >
-                {code === "en" ? "EN" : "日本語"}
-              </button>
-            ))}
-          </div>
-        </div>
-      </header>
+      <ConsoleChrome lang={lang} onLangChange={setLang} />
 
       <div className="mx-auto max-w-[1500px] px-4">
-        <p className="max-w-4xl py-4 text-[13px] leading-relaxed text-muted">
-          {copy("blurb")}
-        </p>
+        <div className="py-4">
+          <h1 className="text-[20px] font-semibold tracking-tight">
+            {copy("tagline")}
+          </h1>
+          <p className="mt-2 max-w-4xl text-[13px] leading-relaxed text-muted">
+            {copy("blurb")}
+          </p>
+        </div>
 
         <nav className="grid gap-2 pb-4 sm:grid-cols-2 xl:grid-cols-5">
           {scenarios.map((s) => {
-            const current = s.id === scenario.id;
+            const selected = s.id === scenario.id;
             return (
               <button
                 key={s.id}
@@ -184,13 +172,13 @@ export default function App() {
                   setPlaying(false);
                 }}
                 className={`cursor-pointer rounded-lg border p-3 text-left transition-colors ${
-                  current
-                    ? "border-key bg-key/10"
+                  selected
+                    ? "border-amber bg-amber/10"
                     : "border-line bg-panel hover:border-muted"
                 }`}
               >
                 <span
-                  className={`block text-[13px] font-medium ${current ? "text-key" : ""}`}
+                  className={`block text-[13px] font-medium ${selected ? "text-amber" : ""}`}
                 >
                   {t(s.title, lang)}
                 </span>
@@ -217,7 +205,7 @@ export default function App() {
                   setPlaying(true);
                 }
               }}
-              className="cursor-pointer rounded-md border border-key bg-key/10 px-3 py-1.5 text-[12px] text-key hover:bg-key/20"
+              className="cursor-pointer rounded-md border border-amber bg-amber/10 px-3 py-1.5 text-[12px] font-medium text-amber hover:bg-amber/20"
             >
               {playing
                 ? `❙❙ ${copy("pause")}`
@@ -227,20 +215,24 @@ export default function App() {
             </button>
             <button
               type="button"
-              disabled={stepIndex === 0}
-              onClick={() => selectStep(Math.max(0, stepIndex - 1))}
+              disabled={current === 0}
+              onClick={() => selectStep(Math.max(0, current - 1))}
               className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-[12px] text-muted hover:text-fg disabled:cursor-default disabled:opacity-30"
             >
               &larr; {copy("prev")}
             </button>
             <button
               type="button"
-              disabled={stepIndex >= lastIndex}
-              onClick={() => selectStep(Math.min(lastIndex, stepIndex + 1))}
+              disabled={current >= lastIndex}
+              onClick={() => selectStep(Math.min(lastIndex, current + 1))}
               className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-[12px] text-muted hover:text-fg disabled:cursor-default disabled:opacity-30"
             >
               {copy("next")} &rarr;
             </button>
+
+            <span className="font-mono text-[12px] text-muted">
+              {current + 1} / {scenario.steps.length}
+            </span>
 
             <ol className="ml-auto flex flex-wrap items-center gap-1 text-[10.5px]">
               {PHASES.map((phase, i) => (
@@ -248,7 +240,7 @@ export default function App() {
                   <span
                     className={`rounded px-2 py-1 font-mono tracking-wider uppercase transition-colors ${
                       stepPhases.has(phase)
-                        ? "bg-key/20 text-key"
+                        ? "bg-amber/20 text-amber"
                         : scenarioPhases.has(phase)
                           ? "bg-panel-2 text-fg"
                           : "bg-panel text-muted/30"
@@ -264,34 +256,56 @@ export default function App() {
             </ol>
           </div>
 
+          <div className="h-1 overflow-hidden rounded-full bg-panel-2">
+            <div
+              className="h-full rounded-full bg-amber transition-[width] duration-500 ease-out"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+
           <SequenceDiagram
             scenario={scenario}
-            activeIndex={Math.min(stepIndex, lastIndex)}
+            activeIndex={current}
             onSelect={selectStep}
             lang={lang}
           />
 
+          {/* Repeated right under the diagram so an autoplay tick is visible
+              without scrolling to the detail panel. */}
+          <div className="flex flex-wrap items-baseline gap-x-2 rounded-md border border-line bg-panel-2 px-3 py-2">
+            <span className="font-mono text-[10.5px] tracking-wider text-muted uppercase">
+              {copy("nowShowing")}
+            </span>
+            <span className="text-[13px] font-medium text-amber">
+              {current + 1}. {t(step.title, lang)}
+            </span>
+            <span className="font-mono text-[11px] text-muted">
+              {t(ACTOR_LABEL[step.from], lang)} &rarr;{" "}
+              {t(ACTOR_LABEL[step.to], lang)}
+            </span>
+          </div>
+
           <p className="text-[11px] leading-relaxed text-muted">
-            {copy("railNote")} {copy("keys")}
+            {copy("railNote")}
           </p>
         </section>
 
         <main className="grid gap-4 pb-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <section className="min-w-0 space-y-4">
             <div className="rounded-lg border border-line bg-panel p-4">
-              <p className="font-mono text-[11px] text-muted">
-                {stepIndex + 1}/{scenario.steps.length} &middot;{" "}
-                {t(ACTOR_LABEL[step.from], lang)} &rarr;{" "}
-                {t(ACTOR_LABEL[step.to], lang)}
-              </p>
-              <h2 className="mt-1 text-[17px] font-semibold">
-                {t(step.title, lang)}
-              </h2>
+              <h2 className="text-[17px] font-semibold">{t(step.title, lang)}</h2>
               <p className="mt-2 text-[13px] leading-relaxed">
                 {t(step.narrative, lang)}
               </p>
             </div>
 
+            {step.handoff && (
+              <Handoff
+                key={`${scenario.id}:${step.id}`}
+                tabs={step.handoff}
+                lang={lang}
+              />
+            )}
             {step.request && (
               <Wire
                 label={copy("request")}
@@ -306,7 +320,7 @@ export default function App() {
             {step.signing && (
               // Step ids repeat across scenarios, so the key carries both.
               <SignatureLab
-                key={`${scenario.id}:${step.id}`}
+                key={`${scenario.id}:${step.id}:sig`}
                 demo={step.signing}
                 lang={lang}
               />
@@ -318,7 +332,7 @@ export default function App() {
               <h2 className="font-mono text-[11px] tracking-wider text-muted uppercase">
                 {copy("credential")}
               </h2>
-              <p className="wire mt-1 text-key">{t(scenario.credential, lang)}</p>
+              <p className="wire mt-1 text-amber">{t(scenario.credential, lang)}</p>
               <h2 className="mt-3 font-mono text-[11px] tracking-wider text-muted uppercase">
                 {copy("why")}
               </h2>
@@ -351,11 +365,12 @@ export default function App() {
           </aside>
         </main>
 
-        <footer className="border-t border-line py-5 text-[11.5px] text-muted">
+        <footer className="space-y-1 border-t border-line py-5 text-[11.5px] text-muted">
           <p>{copy("noSecrets")}</p>
-          <p className="mt-1">
+          <p>{copy("disclaimer")}</p>
+          <p>
             <a
-              className="text-key hover:underline"
+              className="text-amber hover:underline"
               href="https://github.com/0-draft/caller-identity"
             >
               github.com/0-draft/caller-identity
