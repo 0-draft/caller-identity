@@ -35,6 +35,9 @@ const PHASE_COLOR: Record<Phase, string> = {
 const WIDTH = 1000;
 const HEADER_H = 70;
 const REQUEST_DY = 34;
+
+/** Line height for the carried-header lines drawn under a request arrow. */
+const CARRY_LINE_H = 14;
 const RESPONSE_DY = 32;
 const STEP_GAP = 20;
 const TOP_PAD = 14;
@@ -117,6 +120,7 @@ export function SequenceDiagram({
     const heights = scenario.steps.map(
       (s) =>
         REQUEST_DY +
+        (s.request?.carries?.length ?? 0) * CARRY_LINE_H +
         (s.response ? RESPONSE_DY : 0) +
         (s.from === s.to ? SELF_DROP : 0) +
         STEP_GAP,
@@ -128,13 +132,18 @@ export function SequenceDiagram({
         .reduce((sum, h) => sum + h, HEADER_H + TOP_PAD);
       const requestY = top + REQUEST_DY;
 
+      const carried = step.request?.carries?.length ?? 0;
+
       return {
         step,
         index,
         top,
         height: heights[index],
         requestY,
-        responseY: step.response ? requestY + RESPONSE_DY : null,
+        // Responses sit below whatever the request arrow had to say.
+        responseY: step.response
+          ? requestY + RESPONSE_DY + carried * CARRY_LINE_H
+          : null,
       };
     });
   }, [scenario]);
@@ -359,6 +368,24 @@ export function SequenceDiagram({
               >
                 {label}
               </text>
+
+              {step.request?.carries?.map((carried, line) => {
+                // "no ..." lines describe an absence, which is often the point.
+                const absent = /^\(?no\b/i.test(carried);
+                return (
+                  <text
+                    key={carried}
+                    x={selfCall ? mid : mid}
+                    y={requestY + 13 + line * CARRY_LINE_H}
+                    textAnchor={selfCall ? "start" : "middle"}
+                    fill={absent ? "var(--color-warn)" : "var(--color-muted)"}
+                    fontSize="10.5"
+                    fontFamily="var(--font-mono)"
+                  >
+                    {carried}
+                  </text>
+                );
+              })}
 
               {responseY !== null && (
                 <>

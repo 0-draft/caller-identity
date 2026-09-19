@@ -190,6 +190,10 @@ const s3WithTemporaryCredentials = (id: string) =>
     },
     request: {
       start: "GET /key.txt HTTP/1.1",
+      carries: [
+        "Authorization: AWS4-HMAC-SHA256 Credential=ASIA\u2026",
+        "X-Amz-Security-Token: IQoJ\u2026",
+      ],
       headers: [
         ["Host", "my-bucket.s3.us-east-1.amazonaws.com"],
         ["X-Amz-Content-Sha256", EMPTY_HASH],
@@ -285,6 +289,9 @@ export const scenarios: Scenario[] = [
         },
         request: {
           start: "POST / HTTP/1.1",
+          carries: [
+            "Authorization: AWS4-HMAC-SHA256 Credential=AKIA\u2026 (an admin's)",
+          ],
           headers: [
             ["Host", "iam.amazonaws.com"],
             ["Content-Type", "application/x-www-form-urlencoded; charset=utf-8"],
@@ -381,6 +388,10 @@ export const scenarios: Scenario[] = [
         },
         request: {
           start: "GET /key.txt HTTP/1.1",
+          carries: [
+            "Authorization: AWS4-HMAC-SHA256 Credential=AKIA\u2026",
+            "(no X-Amz-Security-Token: two components only)",
+          ],
           headers: [
             ["Host", "my-bucket.s3.us-east-1.amazonaws.com"],
             ["X-Amz-Content-Sha256", EMPTY_HASH],
@@ -481,6 +492,10 @@ export const scenarios: Scenario[] = [
         },
         request: {
           start: "POST / HTTP/1.1",
+          carries: [
+            "Authorization: AWS4-HMAC-SHA256 Credential=AKIA\u2026",
+            "body: Action=AssumeRole&RoleArn=\u2026",
+          ],
           headers: [
             ["Host", "sts.us-east-1.amazonaws.com"],
             ["Content-Type", "application/x-www-form-urlencoded; charset=utf-8"],
@@ -589,6 +604,7 @@ export const scenarios: Scenario[] = [
         request: {
           start:
             "GET /_apis/distributedtask/hubs/Actions/plans/PLAN_ID/jobs/JOB_ID/oidctoken?api-version=2.0&audience=sts.amazonaws.com HTTP/1.1",
+          carries: ["Authorization: Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"],
           headers: [
             ["Host", "pipelinesghubeus.actions.githubusercontent.com"],
             ["Authorization", "Bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}"],
@@ -668,6 +684,10 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         request: {
           start: "POST / HTTP/1.1",
+          carries: [
+            "no Authorization header at all",
+            "body: WebIdentityToken=eyJraWQiOiI\u2026",
+          ],
           headers: [
             ["Host", "sts.us-east-1.amazonaws.com"],
             ["Content-Type", "application/x-www-form-urlencoded; charset=utf-8"],
@@ -798,6 +818,10 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         request: {
           start: "PUT /latest/api/token HTTP/1.1",
+          carries: [
+            "X-aws-ec2-metadata-token-ttl-seconds: 21600",
+            "no credential of any kind",
+          ],
           headers: [
             ["Host", "169.254.169.254"],
             ["X-aws-ec2-metadata-token-ttl-seconds", "21600"],
@@ -855,6 +879,7 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         request: {
           start: "GET /latest/meta-data/iam/security-credentials/AppRole HTTP/1.1",
+          carries: ["X-aws-ec2-metadata-token: AQAE\u2026"],
           headers: [
             ["Host", "169.254.169.254"],
             ["X-aws-ec2-metadata-token", "AQAEAMEXAMPLEtokenvalueEXAMPLE=="],
@@ -975,6 +1000,7 @@ ${GITHUB_JWT_PAYLOAD}`,
         request: {
           start:
             "GET /key.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIA...&X-Amz-Date=20260919T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Security-Token=IQoJ...&X-Amz-Signature=... HTTP/1.1",
+          carries: ["no headers: it is all in the query string"],
           headers: [["Host", "my-bucket.s3.us-east-1.amazonaws.com"]],
           annotations: [
             {
@@ -1114,6 +1140,7 @@ ${GITHUB_JWT_PAYLOAD}`,
         },
         request: {
           start: "POST /model/us.anthropic.claude-sonnet-4-6/converse HTTP/1.1",
+          carries: ["Authorization: Bearer ABSK\u2026 (no signature anywhere)"],
           headers: [
             ["Host", "bedrock-runtime.us-east-1.amazonaws.com"],
             ["Content-Type", "application/json"],

@@ -79,6 +79,12 @@ export interface WireMessage {
    * reads "200 OK", which says nothing about what came back.
    */
   summary?: L;
+  /**
+   * The headers or parameters that actually carry the identity, shown on the
+   * arrow itself. Without these the diagram says "GET /key.txt" and hides the
+   * only part of the request that proves who sent it.
+   */
+  carries?: string[];
 }
 
 /** A note about what AWS does with the message, on its side of the wire. */
