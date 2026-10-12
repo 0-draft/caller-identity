@@ -26,6 +26,8 @@ STS は単一の関数ではない。クレデンシャルを返すのは次の�
 昇格させるだけで、必要なら `aws:MultiFactorAuthPresent` が立つ。名前が助けになるより誤解を招く回数の
 方が多い。
 
+session policy と session tag は session token の中に入るので、その分 token が大きくなる。2026年9月、STS は session token サイズの上限と、渡したパラメータの上限を別々に持つのをやめた。代わりに [session token サイズ 4,096 byte という単一の上限](https://aws.amazon.com/about-aws/whats-new/2026/09/aws-sts/)になった。入力そのものの平文の制限は残っていて、たとえば inline session policy は 2,048 文字まで。[`AssumeRole` のレスポンス](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html)は byte 単位の `SessionTokenSize` と、上限に対する割合の `SessionTokenUtilization` を返すようになり、`PackedPolicySize` は後者に置き換わる形で非推奨になった。任意のリクエストパラメータ `MinimumSessionTokenSize` は token を指定サイズまで水増しする。本番で大きな token を受け取る前に、クライアントが扱えるか確認するためのパラメータである。
+
 ## なぜ2つだけ未署名なのか
 
 STS を呼ぶには普通は署名が要り、署名にはクレデンシャルが要る。`AssumeRoleWithWebIdentity` と
@@ -112,6 +114,21 @@ STS が欲しいのは身元の主張なので、ID token が正しい形。こ�
 
 サイトの trust policy パネルは、編集可能なトークンに対してこの4つを実際に評価する。読むのではなく
 自分で起こせる。
+
+### `sub` 以外で絞る
+
+2026年1月、STS は GitHub、Google、CircleCI、Oracle Cloud Infrastructure の [provider 固有 claim を condition key として検証する](https://aws.amazon.com/about-aws/whats-new/2026/01/aws-sts-supports-validation-identity-provider-claims/)ようになった。制約を `sub` の文字列に押し込む必要はもう無い。GitHub なら `repository`、`repository_id`、`repository_owner_id`、`actor`、`actor_id`、`ref`、`environment`、`workflow`、`job_workflow_ref`、`enterprise_id` があり、`token.actions.githubusercontent.com:<claim>` の形で書く。trust policy と resource control policy で使え、[condition key のリファレンス](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html)ではどれもセッションでは利用不可とされている。
+
+数値 ID の claim は、`sub` では塞げない穴を塞ぐ。`sub` は名前から組み立てられていて、GitHub ではリネームや削除で空いたリポジトリ名・org 名を別人が取得できる。同じリファレンスも、名前だけに頼らず `repository_id`、`repository_owner_id`、`actor_id` のような不変の ID で照合するよう勧めている。下の ID は placeholder。
+
+```json
+"StringEquals": {
+  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+  "token.actions.githubusercontent.com:repository_owner_id": "123456",
+  "token.actions.githubusercontent.com:repository_id": "1296269",
+  "token.actions.githubusercontent.com:ref": "refs/heads/main"
+}
+```
 
 ## outbound federation、鏡像
 
