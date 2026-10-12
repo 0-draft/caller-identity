@@ -26,6 +26,8 @@ STS は単一の関数ではない。クレデンシャルを返すのは次の�
 昇格させるだけで、必要なら `aws:MultiFactorAuthPresent` が立つ。名前が助けになるより誤解を招く回数の
 方が多い。
 
+session policy と session tag は session token の中に入るので、その分 token が大きくなる。2026年9月から上限は 4,096 byte の token サイズ1本になり、以前の「平文の上限」と「packed サイズの上限」の二本立てを置き換えた。レスポンスには byte 単位の `SessionTokenSize` と、上限に対する割合の `SessionTokenUtilization` が返り、`PackedPolicySize` は非推奨になった。任意のリクエストパラメータ `MinimumSessionTokenSize` は token を指定サイズまで水増しする。本番で大きな token を渡される前に、クライアントが扱えるかを試すためのもの。
+
 ## なぜ2つだけ未署名なのか
 
 STS を呼ぶには普通は署名が要り、署名にはクレデンシャルが要る。`AssumeRoleWithWebIdentity` と
@@ -112,6 +114,21 @@ STS が欲しいのは身元の主張なので、ID token が正しい形。こ�
 
 サイトの trust policy パネルは、編集可能なトークンに対してこの4つを実際に評価する。読むのではなく
 自分で起こせる。
+
+### `sub` 以外で絞る
+
+2026年1月までは、GitHub 向けの trust policy が見られる claim は `aud` と `sub` だけで、制約はすべて `sub` の文字列に押し込むしかなかった。今は STS が GitHub、Google、CircleCI、Oracle Cloud Infrastructure の provider 固有 claim を condition key として検証する。GitHub なら `repository`、`repository_id`、`repository_owner_id`、`actor`、`actor_id`、`ref`、`environment`、`workflow`、`job_workflow_ref`、`enterprise_id` があり、`token.actions.githubusercontent.com:<claim>` の形で書く。trust policy と resource control policy で使えるが、セッションには引き継がれない。
+
+数値 ID の claim は、`sub` では塞げない穴を塞ぐ。`sub` は名前から組み立てられていて、GitHub ではリネームや削除で空いたリポジトリ名・org 名を別人が取得できる。AWS 自身のガイダンスも、名前だけでなく `repository_id` と `repository_owner_id` で照合しろというもの。
+
+```json
+"StringEquals": {
+  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+  "token.actions.githubusercontent.com:repository_owner_id": "123456",
+  "token.actions.githubusercontent.com:repository_id": "1296269",
+  "token.actions.githubusercontent.com:ref": "refs/heads/main"
+}
+```
 
 ## outbound federation、鏡像
 

@@ -27,6 +27,8 @@ sooner than configured.
 to a temporary credential carrying the same permissions, optionally with
 `aws:MultiFactorAuthPresent` set. The name misleads more often than it helps.
 
+Session policies and session tags are carried inside the session token, so they make it bigger. Since September 2026 the limit is a single maximum token size of 4,096 bytes, replacing the older split between a plaintext limit and a separate packed-size limit. The response reports `SessionTokenSize` in bytes and `SessionTokenUtilization` as a percentage of that maximum, and `PackedPolicySize` is deprecated in its favour. The optional `MinimumSessionTokenSize` request parameter pads the token up to a given size, which exists so a client can test that it copes with a large token before production hands it one.
+
 ## Why two of them are unsigned
 
 Calling STS normally requires a signature, which requires a credential. Both
@@ -119,6 +121,21 @@ Four recurring mistakes, in rough order of how often they appear.
 
 The site's trust-policy panel evaluates all four against an editable token, so the failure
 is something to cause rather than read about.
+
+### Matching on more than `sub`
+
+Until January 2026 `aud` and `sub` were the only GitHub claims a trust policy could test, so every constraint had to be squeezed into the `sub` string. STS now validates a set of provider-specific claims as condition keys, for GitHub, Google, CircleCI and Oracle Cloud Infrastructure. For GitHub they include `repository`, `repository_id`, `repository_owner_id`, `actor`, `actor_id`, `ref`, `environment`, `workflow`, `job_workflow_ref` and `enterprise_id`, each written as `token.actions.githubusercontent.com:<claim>`. They are usable in trust policies and resource control policies but are not carried into the session.
+
+The numeric ones answer a weakness that `sub` cannot. `sub` is built from names, and on GitHub a repository or organization name freed by a rename or deletion can be claimed by someone else. AWS's own guidance is to match on `repository_id` and `repository_owner_id` rather than on names alone.
+
+```json
+"StringEquals": {
+  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+  "token.actions.githubusercontent.com:repository_owner_id": "123456",
+  "token.actions.githubusercontent.com:repository_id": "1296269",
+  "token.actions.githubusercontent.com:ref": "refs/heads/main"
+}
+```
 
 ## Outbound federation, the mirror image
 
