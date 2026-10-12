@@ -27,7 +27,7 @@ sooner than configured.
 to a temporary credential carrying the same permissions, optionally with
 `aws:MultiFactorAuthPresent` set. The name misleads more often than it helps.
 
-Session policies and session tags are carried inside the session token, so they make it bigger. Since September 2026 the limit is a single maximum token size of 4,096 bytes, replacing the older split between a plaintext limit and a separate packed-size limit. The response reports `SessionTokenSize` in bytes and `SessionTokenUtilization` as a percentage of that maximum, and `PackedPolicySize` is deprecated in its favour. The optional `MinimumSessionTokenSize` request parameter pads the token up to a given size, which exists so a client can test that it copes with a large token before production hands it one.
+Session policies and session tags are carried inside the session token, so they make it bigger. In September 2026 STS replaced its separate limits on session token size and on the passed-in parameters with a [single 4,096-byte session token size](https://aws.amazon.com/about-aws/whats-new/2026/09/aws-sts/). The plaintext limits on the inputs themselves still apply, such as 2,048 characters for an inline session policy. The [`AssumeRole` response](https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html) now reports `SessionTokenSize` in bytes and `SessionTokenUtilization` as a percentage of the maximum, and marks `PackedPolicySize` as deprecated in favour of the latter. The optional `MinimumSessionTokenSize` request parameter pads the token up to a given size, so a client can check that it copes with a large token before production hands it one.
 
 ## Why two of them are unsigned
 
@@ -124,9 +124,9 @@ is something to cause rather than read about.
 
 ### Matching on more than `sub`
 
-Until January 2026 `aud` and `sub` were the only GitHub claims a trust policy could test, so every constraint had to be squeezed into the `sub` string. STS now validates a set of provider-specific claims as condition keys, for GitHub, Google, CircleCI and Oracle Cloud Infrastructure. For GitHub they include `repository`, `repository_id`, `repository_owner_id`, `actor`, `actor_id`, `ref`, `environment`, `workflow`, `job_workflow_ref` and `enterprise_id`, each written as `token.actions.githubusercontent.com:<claim>`. They are usable in trust policies and resource control policies but are not carried into the session.
+In January 2026 STS [began validating provider-specific claims](https://aws.amazon.com/about-aws/whats-new/2026/01/aws-sts-supports-validation-identity-provider-claims/) as condition keys for GitHub, Google, CircleCI and Oracle Cloud Infrastructure, so a constraint no longer has to be squeezed into the `sub` string. For GitHub they include `repository`, `repository_id`, `repository_owner_id`, `actor`, `actor_id`, `ref`, `environment`, `workflow`, `job_workflow_ref` and `enterprise_id`, each written as `token.actions.githubusercontent.com:<claim>`. They are usable in trust policies and resource control policies, and the [condition key reference](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_iam-condition-keys.html) lists none of them as available in the session.
 
-The numeric ones answer a weakness that `sub` cannot. `sub` is built from names, and on GitHub a repository or organization name freed by a rename or deletion can be claimed by someone else. AWS's own guidance is to match on `repository_id` and `repository_owner_id` rather than on names alone.
+The numeric ones answer a weakness that `sub` cannot. `sub` is built from names, and on GitHub a repository or organization name freed by a rename or deletion can be claimed by someone else. The same reference recommends matching on immutable identifiers such as `repository_id`, `repository_owner_id` and `actor_id` rather than on names alone. The IDs below are placeholders.
 
 ```json
 "StringEquals": {
