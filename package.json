@@ -17,7 +17,10 @@
     "format:check": "prettier --check ."
   },
   "overrides": {
-    "smol-toml": "^1.8.0"
+    "smol-toml": "1.9.0",
+    "katex": "0.18.10",
+    "minimatch": "11.0.5",
+    "re2js": "2.9.1"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",
