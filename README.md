@@ -3,7 +3,7 @@
 # caller-identity
 
 > [!WARNING]
-> **Merged into [0-draft/aws-credentials](https://github.com/0-draft/aws-credentials) on 2026-11-08, to be archived on or after 2026-12-08.** It overlapped the STS explainer in assume-role (now aws-credentials) on three of its seven paths, so the two became one site. The signer, presigned URLs, SigV4a and Bedrock API keys now live in the [Signing chapter](https://0-draft.github.io/aws-credentials/#signing), and these notes in [docs/signing/](https://github.com/0-draft/aws-credentials/tree/main/docs/signing). The old site URL redirects there.
+> **Merged into [0-draft/aws-credentials](https://github.com/0-draft/aws-credentials) on 2026-11-08, archived on 2026-11-08.** It overlapped the STS explainer in assume-role (now aws-credentials) on three of its seven paths, so the two became one site. The signer, presigned URLs, SigV4a and Bedrock API keys now live in the [Signing chapter](https://0-draft.github.io/aws-credentials/#signing), and these notes in [docs/signing/](https://github.com/0-draft/aws-credentials/tree/main/docs/signing). The old site URL redirects there.
 
 What actually goes over the wire when AWS decides who you are.
 

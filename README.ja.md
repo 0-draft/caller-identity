@@ -3,7 +3,7 @@
 # caller-identity
 
 > [!WARNING]
-> **2026-11-08 に [0-draft/aws-credentials](https://github.com/0-draft/aws-credentials) へ統合しました。2026-12-08 以降にアーカイブします。** 7 つの経路のうち 3 つが assume-role (現 aws-credentials) の STS 解説と重なっていたため、1 つのサイトにまとめました。署名処理、presigned URL、SigV4a、Bedrock API キーは[署名の章](https://0-draft.github.io/aws-credentials/?lang=ja#signing)に、ノートは [docs/signing/](https://github.com/0-draft/aws-credentials/tree/main/docs/signing) に移っています。旧サイトの URL はそちらへ転送されます。
+> **2026-11-08 に [0-draft/aws-credentials](https://github.com/0-draft/aws-credentials) へ統合しました。2026-11-08 にアーカイブしました。** 7 つの経路のうち 3 つが assume-role (現 aws-credentials) の STS 解説と重なっていたため、1 つのサイトにまとめました。署名処理、presigned URL、SigV4a、Bedrock API キーは[署名の章](https://0-draft.github.io/aws-credentials/?lang=ja#signing)に、ノートは [docs/signing/](https://github.com/0-draft/aws-credentials/tree/main/docs/signing) に移っています。旧サイトの URL はそちらへ転送されます。
 
 AWS が「お前は誰か」を決めるとき、ワイヤー上で実際に何が流れているか。
 
